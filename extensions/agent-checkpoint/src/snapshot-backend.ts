@@ -58,12 +58,12 @@ export interface SnapshotBackend {
 
 export type BackendType = "copy";
 
-export async function createSnapshotBackend(params: {
+export function createSnapshotBackend(params: {
   type: BackendType;
   storageDir: string;
   backendConfig: Record<string, unknown>;
   logger?: PluginLogger;
-}): Promise<SnapshotBackend> {
+}): SnapshotBackend {
   switch (params.type) {
     case "copy": {
       const excludePatterns = Array.isArray(params.backendConfig.excludePatterns)
