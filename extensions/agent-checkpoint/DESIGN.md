@@ -169,7 +169,8 @@ The `checkpoint` tool is exposed to agents with three actions:
 ### 5.2 Slash Command
 
 ```
-/checkpoint list                          # list checkpoints
+/checkpoint sessions                      # list all sessions (default)
+/checkpoint list <agentId> <sessionId>    # list checkpoints for a session
 /checkpoint create [label]                # manual checkpoint with optional label
 /checkpoint restore <id> [scope]          # restore to checkpoint
 /checkpoint timeline [port]               # start HTTP timeline viewer
@@ -180,15 +181,19 @@ The `checkpoint` tool is exposed to agents with three actions:
 
 A local HTTP server serving a single-page dark-themed UI:
 
-- **Session selector** — browse all agent sessions
-- **Timeline** — vertical timeline with color-coded nodes (tool call / manual / session start / error)
-- **Detail panel** — checkpoint metadata, file change list, and diff view
+- **Session selector** — tree-structured session browser with parent/child relationships
+- **Timeline** — vertical timeline with color-coded nodes (tool call / manual / session start / error / child session)
+- **Detail panel** — checkpoint metadata, file change list, diff view, and session relation links
+- **Restore button** — roll back workspace files to a selected checkpoint (with confirmation dialog)
+- **Continue button** — one-click restore + agent re-execution via `runtime.subagent.run()`, with SSE-streamed progress panel showing real-time phase updates (restoring → running → done/error)
 - **Responsive** — works on desktop and mobile
 
 API endpoints:
-- `GET /api/sessions` — list all sessions
+- `GET /api/sessions` — list all sessions (enriched with checkpoint count, parent/child refs)
 - `GET /api/sessions/:agentId/:sessionId/checkpoints` — list checkpoints
 - `GET /api/sessions/:agentId/:sessionId/checkpoints/:id/diff` — get diff
+- `POST /api/restore` — restore workspace to a checkpoint (body: `{agentId, sessionId, checkpointId, scope}`)
+- `POST /api/continue` — restore + start agent execution (SSE stream; body: `{agentId, sessionId, checkpointId, message?}`)
 
 ## 6. Auto-Checkpoint Behavior
 
@@ -231,7 +236,7 @@ All fields are optional. Invalid values fall back to safe defaults.
 ### Planned Improvements
 - **Phase 2: Incremental backend** — btrfs/ZFS snapshots or content-addressable storage
 - **Phase 2: Remote backend** — store snapshots on a remote server for cross-machine restore
-- **Timeline viewer enhancements** — restore button in UI, real-time auto-refresh, content diff view
+- **Timeline viewer enhancements** — real-time auto-refresh, content diff view
 
 ### Design Debt (from Ousterhout review)
 1. `snapshotRef` opacity could be stronger (prefix with backend type)

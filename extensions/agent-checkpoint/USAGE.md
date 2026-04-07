@@ -13,19 +13,33 @@ No manual action needed. Checkpoints are created silently in the background.
 
 ## Manual Operations (via /checkpoint command)
 
+### List sessions
+
+```
+/checkpoint sessions
+```
+
+Example output:
+
+```
+Sessions (2)
+`main` / `coding-task-2026-04-08` — 12 checkpoints
+`main` / `subagent:review-abc` — 3 checkpoints ← main/coding-task-2026-04-08
+```
+
 ### List checkpoints
 
 ```
-/checkpoint list
+/checkpoint list main coding-task-2026-04-08
 ```
 
 Example output:
 
 ```
 Checkpoints (3)
-`01JRX...ABC` 2026-04-07T10:30:15Z [Write] — 3 files
-`01JRX...DEF` 2026-04-07T10:31:02Z [Bash] — 1 files
-`01JRX...GHI` 2026-04-07T10:32:45Z [Edit] ❌ — 2 files
+`main-coding-001-start` 2026-04-07T10:30:15Z [Write] — 3 files
+`main-coding-002-write` 2026-04-07T10:31:02Z [Bash] — 1 files
+`main-coding-003-exec`  2026-04-07T10:32:45Z [Edit] ❌ — 2 files
 ```
 
 ### Create a manual checkpoint
@@ -51,6 +65,10 @@ Checkpoints (3)
 ```
 
 Open the printed URL in a browser to visually browse all checkpoints.
+
+In the timeline viewer you can:
+- **Restore Files** — click the orange button on any checkpoint to roll back workspace files to that point
+- **Restore & Continue** — click the green button to restore and immediately resume agent execution from that checkpoint, with real-time progress streaming
 
 ### Stop the timeline viewer
 

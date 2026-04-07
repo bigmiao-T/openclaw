@@ -13,19 +13,33 @@
 
 ## 手动操作（通过 /checkpoint 命令）
 
+### 查看会话列表
+
+```
+/checkpoint sessions
+```
+
+输出示例：
+
+```
+Sessions (2)
+`main` / `coding-task-2026-04-08` — 12 checkpoints
+`main` / `subagent:review-abc` — 3 checkpoints ← main/coding-task-2026-04-08
+```
+
 ### 查看检查点列表
 
 ```
-/checkpoint list
+/checkpoint list main coding-task-2026-04-08
 ```
 
 输出示例：
 
 ```
 Checkpoints (3)
-`01JRX...ABC` 2026-04-07T10:30:15Z [Write] — 3 files
-`01JRX...DEF` 2026-04-07T10:31:02Z [Bash] — 1 files
-`01JRX...GHI` 2026-04-07T10:32:45Z [Edit] ❌ — 2 files
+`main-coding-001-start` 2026-04-07T10:30:15Z [Write] — 3 files
+`main-coding-002-write` 2026-04-07T10:31:02Z [Bash] — 1 files
+`main-coding-003-exec`  2026-04-07T10:32:45Z [Edit] ❌ — 2 files
 ```
 
 ### 手动创建检查点
@@ -51,6 +65,10 @@ Checkpoints (3)
 ```
 
 浏览器打开输出的 URL，可以可视化浏览所有检查点。
+
+在时间线查看器中可以：
+- **恢复文件** — 点击任意检查点的橙色按钮，将工作区文件回滚到该时间点
+- **恢复并继续** — 点击绿色按钮，一键恢复并立即从该检查点继续执行 Agent 任务，实时流式展示执行进度
 
 ### 停止查看器
 

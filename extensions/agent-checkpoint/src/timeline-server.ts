@@ -1174,35 +1174,7 @@ let activeExecAbort = null;
 function restoreAndContinue(checkpointId) {
   const cp = currentCheckpoints.find(c => c.id === checkpointId);
   if (!cp) return;
-
-  // Show input modal for optional message
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.innerHTML =
-    '<div class="modal">' +
-    '<h3>Restore &amp; Continue</h3>' +
-    '<p>Restore to <strong>' + escapeHtml(checkpointId) + '</strong> and start agent execution.</p>' +
-    '<p style="margin-bottom:8px;">Optional instruction for the agent:</p>' +
-    '<input type="text" id="continue-msg" placeholder="Continue the task from where it left off..." ' +
-    'style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;margin-bottom:16px;outline:none;">' +
-    '<div class="modal-actions">' +
-    '<button class="cancel">Cancel</button>' +
-    '<button class="confirm">Start</button>' +
-    '</div></div>';
-  document.body.appendChild(overlay);
-
-  const msgInput = overlay.querySelector('#continue-msg');
-  overlay.querySelector('.cancel').addEventListener('click', () => overlay.remove());
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-  overlay.querySelector('.confirm').addEventListener('click', () => {
-    const msg = msgInput.value.trim() || '';
-    overlay.remove();
-    startExecution(cp, msg);
-  });
-  msgInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { overlay.querySelector('.confirm').click(); }
-  });
-  msgInput.focus();
+  startExecution(cp, '');
 }
 
 function startExecution(cp, message) {
