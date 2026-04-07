@@ -1,0 +1,85 @@
+{
+  "id": "agent-checkpoint",
+  "name": "Agent Checkpoint",
+  "description": "Automatic checkpoint and rollback for long-running agent tasks.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true
+      },
+      "storagePath": {
+        "type": "string"
+      },
+      "backendType": {
+        "type": "string",
+        "enum": ["copy"],
+        "default": "copy"
+      },
+      "backendConfig": {
+        "type": "object",
+        "additionalProperties": true,
+        "default": {}
+      },
+      "triggerOn": {
+        "type": "string",
+        "enum": ["all_tools", "mutating_tools", "manual"],
+        "default": "mutating_tools"
+      },
+      "excludeTools": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": ["read", "glob", "grep", "memory_search", "memory_get"]
+      },
+      "maxCheckpointsPerSession": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 1000,
+        "default": 200
+      },
+      "retentionDays": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 365,
+        "default": 30
+      },
+      "restoreDefaultScope": {
+        "type": "string",
+        "enum": ["files", "transcript", "all"],
+        "default": "all"
+      }
+    }
+  },
+  "uiHints": {
+    "enabled": {
+      "label": "Enable Checkpoints",
+      "help": "Enable or disable automatic checkpoint creation."
+    },
+    "storagePath": {
+      "label": "Storage Path",
+      "help": "Directory to store checkpoint data. Defaults to ~/.openclaw/checkpoints/."
+    },
+    "backendType": {
+      "label": "Backend Type",
+      "help": "Snapshot backend: copy (full directory copy)."
+    },
+    "triggerOn": {
+      "label": "Trigger Mode",
+      "help": "When to create checkpoints: all_tools, mutating_tools (skip reads), or manual only."
+    },
+    "maxCheckpointsPerSession": {
+      "label": "Max Per Session",
+      "help": "Maximum checkpoints per session before pruning oldest."
+    },
+    "retentionDays": {
+      "label": "Retention Days",
+      "help": "Days to keep checkpoint data before auto-pruning."
+    },
+    "restoreDefaultScope": {
+      "label": "Default Restore Scope",
+      "help": "What to restore: files only, transcript only, or all."
+    }
+  }
+}
