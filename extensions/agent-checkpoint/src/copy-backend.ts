@@ -48,7 +48,8 @@ export class CopyBackend implements SnapshotBackend {
         recursive: true,
         filter: this.createFilter(workspaceDir),
       });
-      // Atomic rename
+      // Atomic rename (remove stale target if left over from a previous session)
+      await fs.rm(snapshotDir, { recursive: true, force: true }).catch(() => {});
       await fs.rename(tmpDir, snapshotDir);
     } catch (error) {
       await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
