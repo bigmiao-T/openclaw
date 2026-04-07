@@ -1,6 +1,7 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 import type { CheckpointEngine } from "./engine.js";
 import { getCachedWorkspaceDir } from "./hooks.js";
+import { startTimelineServer, type TimelineServer } from "./timeline-server.js";
 
 /**
  * Register /checkpoint slash command.
@@ -9,14 +10,17 @@ import { getCachedWorkspaceDir } from "./hooks.js";
  *   /checkpoint list
  *   /checkpoint create [label]
  *   /checkpoint restore <id> [files|transcript|all]
+ *   /checkpoint timeline [port]
  */
 export function registerCheckpointCommand(
   api: OpenClawPluginApi,
   engine: CheckpointEngine,
 ): void {
+  let activeServer: TimelineServer | null = null;
+
   api.registerCommand({
     name: "checkpoint",
-    description: "Manage workspace checkpoints (list, create, restore).",
+    description: "Manage workspace checkpoints (list, create, restore, timeline).",
     acceptsArgs: true,
     async handler(ctx) {
       const parts = (ctx.args ?? "").trim().split(/\s+/);
@@ -69,8 +73,30 @@ export function registerCheckpointCommand(
           return { text: `Restored to \`${result.restoredCheckpoint.id}\` (scope: ${result.scope})` };
         }
 
+        case "timeline": {
+          if (activeServer) {
+            return { text: `Timeline viewer already running at ${activeServer.url}` };
+          }
+          const port = parts[1] ? Number.parseInt(parts[1], 10) : 0;
+          activeServer = await startTimelineServer({
+            engine,
+            store: engine.store,
+            port: Number.isFinite(port) ? port : 0,
+          });
+          return { text: `Timeline viewer started at ${activeServer.url}` };
+        }
+
+        case "timeline-stop": {
+          if (!activeServer) {
+            return { text: "No timeline viewer running." };
+          }
+          await activeServer.close();
+          activeServer = null;
+          return { text: "Timeline viewer stopped." };
+        }
+
         default:
-          return { text: "Usage: /checkpoint [list|create|restore <id>]" };
+          return { text: "Usage: /checkpoint [list|create|restore <id>|timeline [port]]" };
       }
     },
   });
