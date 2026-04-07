@@ -1,3 +1,0 @@
-- [project_checkpoint_feature.md](project_checkpoint_feature.md) — OpenClaw checkpoint plugin for workspace snapshots/rollback with NFS storage
-- [user_storage_researcher.md](user_storage_researcher.md) — User profile: storage system researcher, NFS/VastData, prefers iterative delivery
-- [feedback_use_gh_for_git.md](feedback_use_gh_for_git.md) — Use gh CLI for git push, not raw git/SSH
