@@ -8,7 +8,6 @@ import type {
   CheckpointTrigger,
   RestoreScope,
 } from "./types.js";
-import { WorkspaceLock } from "./workspace-lock.js";
 
 export type CreateCheckpointParams = {
   agentId: string;
@@ -42,9 +41,6 @@ export class CheckpointEngine {
 
   /** Tracks last snapshotRef per session for parent chain. */
   private readonly lastRefBySession = new Map<string, string>();
-  /** Per-workspace mutex to serialize concurrent create/restore operations. */
-  private readonly lock = new WorkspaceLock();
-
   constructor(params: {
     store: CheckpointStore;
     backend: SnapshotBackend;
@@ -64,10 +60,6 @@ export class CheckpointEngine {
   }
 
   async createCheckpoint(params: CreateCheckpointParams): Promise<CheckpointMeta> {
-    return this.lock.run(params.workspaceDir, () => this._createCheckpoint(params));
-  }
-
-  private async _createCheckpoint(params: CreateCheckpointParams): Promise<CheckpointMeta> {
     const {
       agentId, sessionId, runId, workspaceDir, trigger,
       toolDurationMs, toolResult, sessionTranscriptPath,
@@ -131,17 +123,6 @@ export class CheckpointEngine {
   }
 
   async restoreCheckpoint(params: {
-    agentId: string;
-    sessionId: string;
-    checkpointId: string;
-    workspaceDir: string;
-    scope?: RestoreScope;
-    sessionTranscriptPath?: string;
-  }): Promise<RestoreCheckpointResult> {
-    return this.lock.run(params.workspaceDir, () => this._restoreCheckpoint(params));
-  }
-
-  private async _restoreCheckpoint(params: {
     agentId: string;
     sessionId: string;
     checkpointId: string;
