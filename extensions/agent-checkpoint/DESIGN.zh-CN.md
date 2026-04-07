@@ -175,7 +175,8 @@ type CheckpointMeta = {
 ### 5.2 斜杠命令
 
 ```
-/checkpoint list                          # 列出检查点
+/checkpoint sessions                      # 列出所有会话（默认）
+/checkpoint list <agentId> <sessionId>    # 列出指定会话的检查点
 /checkpoint create [label]                # 手动创建检查点，可带标签
 /checkpoint restore <id> [scope]          # 恢复到指定检查点
 /checkpoint timeline [port]               # 启动 HTTP 时间线查看器
@@ -186,15 +187,19 @@ type CheckpointMeta = {
 
 本地 HTTP 服务器，提供单页暗色主题 UI：
 
-- **会话选择器** — 浏览所有 Agent 会话
-- **时间线** — 纵向时间线，用不同颜色节点区分类型（工具调用 / 手动 / 会话启动 / 错误）
-- **详情面板** — 检查点元数据、文件变更列表、diff 视图
+- **会话选择器** — 树形结构浏览所有 Agent 会话，展示父子关系
+- **时间线** — 纵向时间线，用不同颜色节点区分类型（工具调用 / 手动 / 会话启动 / 错误 / 子会话）
+- **详情面板** — 检查点元数据、文件变更列表、diff 视图、会话关系导航链接
+- **恢复按钮** — 一键回滚工作区文件到指定检查点（带确认弹窗）
+- **继续执行按钮** — 一键恢复 + 通过 `runtime.subagent.run()` 重新启动 Agent 执行，SSE 流式推送实时进度（恢复中 → 执行中 → 完成/失败）
 - **响应式布局** — 适配桌面和手机
 
 API 端点：
-- `GET /api/sessions` — 列出所有会话
+- `GET /api/sessions` — 列出所有会话（含检查点数量、父子关系）
 - `GET /api/sessions/:agentId/:sessionId/checkpoints` — 列出检查点
 - `GET /api/sessions/:agentId/:sessionId/checkpoints/:id/diff` — 获取 diff
+- `POST /api/restore` — 恢复工作区到指定检查点（body: `{agentId, sessionId, checkpointId, scope}`）
+- `POST /api/continue` — 恢复 + 启动 Agent 继续执行（SSE 流；body: `{agentId, sessionId, checkpointId, message?}`）
 
 ## 6. 自动检查点行为
 
@@ -237,7 +242,7 @@ API 端点：
 ### 未来改进
 - **Phase 2: 增量后端** — btrfs/ZFS 快照或内容寻址存储
 - **Phase 2: 远程后端** — 将快照存储到远程服务器，支持跨机器恢复
-- **时间线查看器增强** — UI 中的恢复按钮、实时自动刷新、内容级 diff 展示
+- **时间线查看器增强** — 实时自动刷新、内容级 diff 展示
 
 ### 设计债务（来自 Ousterhout 审查）
 
