@@ -1,4 +1,5 @@
 import type { PluginLogger } from "openclaw/plugin-sdk";
+import { CopyBackend } from "./copy-backend.js";
 
 // ─── Snapshot result ────────────────────────────────────────────────────────
 
@@ -65,7 +66,6 @@ export async function createSnapshotBackend(params: {
 }): Promise<SnapshotBackend> {
   switch (params.type) {
     case "copy": {
-      const { CopyBackend } = await import("./copy-backend.js");
       const excludePatterns = Array.isArray(params.backendConfig.excludePatterns)
         ? (params.backendConfig.excludePatterns as string[])
         : undefined;
