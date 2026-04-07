@@ -75,7 +75,12 @@ describe("TimelineServer", () => {
     });
 
     const sessions = await fetchJSON("/api/sessions");
-    expect(sessions).toContainEqual({ agentId: "a1", sessionId: "s1" });
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].agentId).toBe("a1");
+    expect(sessions[0].sessionId).toBe("s1");
+    expect(sessions[0].checkpointCount).toBe(1);
+    expect(sessions[0].parentSession).toBeNull();
+    expect(sessions[0].childSessions).toEqual([]);
   });
 
   it("returns checkpoints for a session", async () => {

@@ -1,11 +1,18 @@
 import type { OpenClawPluginApi, OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry";
 import type { CheckpointEngine } from "./engine.js";
+import type { SessionRef } from "./types.js";
 
 /**
  * Workspace directory cache.
  * Keyed by agentId so each agent (including sub-agents) resolves its own workspace.
  */
 const workspaceDirs = new Map<string, string>();
+
+/**
+ * Maps sessionKey → { agentId, sessionId } for resolving parent/child relationships.
+ * Populated from session_start and before_agent_start hooks.
+ */
+const sessionKeyIndex = new Map<string, SessionRef>();
 
 export function cacheWorkspaceDir(ctx: OpenClawPluginToolContext): void {
   if (ctx.agentId && ctx.workspaceDir) {
@@ -22,6 +29,7 @@ export function getCachedWorkspaceDir(agentId: string): string | undefined {
  * - before_agent_start: cache workspaceDir early (before session_start fires)
  * - after_tool_call: auto-create checkpoint for mutating tools
  * - session_start: create baseline checkpoint
+ * - subagent_spawned: link parent ↔ child session manifests
  */
 export function registerCheckpointHooks(
   api: OpenClawPluginApi,
@@ -32,6 +40,13 @@ export function registerCheckpointHooks(
   api.on("before_agent_start", (_event, context) => {
     if (context.agentId && context.workspaceDir) {
       workspaceDirs.set(context.agentId, context.workspaceDir);
+    }
+    if (context.agentId && context.sessionId && context.sessionKey) {
+      sessionKeyIndex.set(context.sessionKey, {
+        agentId: context.agentId,
+        sessionId: context.sessionId,
+        sessionKey: context.sessionKey,
+      });
     }
   });
 
@@ -72,6 +87,15 @@ export function registerCheckpointHooks(
     const sessionId = context.sessionId;
     if (!agentId || !sessionId) return;
 
+    // Index this session key for parent/child resolution
+    if (context.sessionKey) {
+      sessionKeyIndex.set(context.sessionKey, {
+        agentId,
+        sessionId,
+        sessionKey: context.sessionKey,
+      });
+    }
+
     const workspaceDir = getCachedWorkspaceDir(agentId);
     if (!workspaceDir) return;
 
@@ -87,4 +111,41 @@ export function registerCheckpointHooks(
       api.logger?.warn(`Baseline checkpoint failed: ${String(error)}`);
     }
   });
+
+  // Link parent ↔ child manifests when a sub-agent is spawned
+  api.on("subagent_spawned", async (event, context) => {
+    const childSessionKey = event.childSessionKey ?? context.childSessionKey;
+    const parentSessionKey = context.requesterSessionKey;
+    if (!childSessionKey || !parentSessionKey) return;
+
+    const childRef = sessionKeyIndex.get(childSessionKey)
+      ?? parseSessionKey(childSessionKey, event.agentId);
+    const parentRef = sessionKeyIndex.get(parentSessionKey);
+
+    if (!parentRef || !childRef) return;
+
+    try {
+      await engine.linkParentChild(parentRef, childRef);
+    } catch (error) {
+      api.logger?.warn(`Failed to link parent/child sessions: ${String(error)}`);
+    }
+  });
+}
+
+/**
+ * Best-effort parse of a session key like "agent:main:subagent:uuid" or
+ * "agent:main:telegram:chatid" into a SessionRef.
+ */
+function parseSessionKey(sessionKey: string, fallbackAgentId?: string): SessionRef | undefined {
+  // Format: "agent:<agentId>:<type>:<id>" or "agent:<agentId>:<sessionId>"
+  const parts = sessionKey.split(":");
+  if (parts.length < 3 || parts[0] !== "agent") return undefined;
+
+  const agentId = parts[1]!;
+  // The session ID portion is everything after agent:<agentId>:
+  // For subagent keys like "agent:main:subagent:uuid", the sessionId is the uuid
+  // But we may not have it indexed yet. Use the full key suffix as sessionId fallback.
+  const sessionId = parts.slice(2).join(":");
+
+  return { agentId: fallbackAgentId ?? agentId, sessionId, sessionKey };
 }

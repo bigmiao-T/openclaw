@@ -41,11 +41,21 @@ export type CheckpointMeta = {
   toolResult?: CheckpointToolResult;
 };
 
+export type SessionRef = {
+  agentId: string;
+  sessionId: string;
+  sessionKey?: string;
+};
+
 export type CheckpointManifest = {
   sessionId: string;
   agentId: string;
   checkpoints: CheckpointId[];
   currentHead: CheckpointId | null;
+  /** Set on child manifests — points back to the parent that spawned this session. */
+  parentSession?: SessionRef;
+  /** Set on parent manifests — tracks spawned child sessions. */
+  childSessions?: SessionRef[];
 };
 
 export type CheckpointPluginConfig = {
