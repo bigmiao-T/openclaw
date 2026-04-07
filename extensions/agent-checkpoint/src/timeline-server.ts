@@ -45,24 +45,39 @@ export async function startTimelineServer(params: TimelineServerParams): Promise
 
       if (pathname === "/api/sessions") {
         const sessions = await store.listSessions();
-        jsonResponse(res, sessions);
+        // Enrich with manifest data (parentSession, childSessions, checkpoint count)
+        const enriched = await Promise.all(
+          sessions.map(async (s) => {
+            const manifest = await store.getManifest(s.agentId, s.sessionId);
+            return {
+              ...s,
+              checkpointCount: manifest?.checkpoints.length ?? 0,
+              parentSession: manifest?.parentSession ?? null,
+              childSessions: manifest?.childSessions ?? [],
+            };
+          }),
+        );
+        jsonResponse(res, enriched);
         return;
       }
 
-      const checkpointsMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/checkpoints$/);
+      const checkpointsMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/(.+)\/checkpoints$/);
       if (checkpointsMatch) {
-        const [, agentId, sessionId] = checkpointsMatch;
-        const checkpoints = await store.listCheckpoints(agentId!, sessionId!);
+        const agentId = checkpointsMatch[1]!;
+        const sessionId = decodeURIComponent(checkpointsMatch[2]!);
+        const checkpoints = await store.listCheckpoints(agentId, sessionId);
         jsonResponse(res, checkpoints);
         return;
       }
 
       const diffMatch = pathname.match(
-        /^\/api\/sessions\/([^/]+)\/([^/]+)\/checkpoints\/([^/]+)\/diff$/,
+        /^\/api\/sessions\/([^/]+)\/(.+)\/checkpoints\/([^/]+)\/diff$/,
       );
       if (diffMatch) {
-        const [, agentId, sessionId, checkpointId] = diffMatch;
-        const diff = await engine.getCheckpointDiff(agentId!, sessionId!, checkpointId!);
+        const agentId = diffMatch[1]!;
+        const sessionId = decodeURIComponent(diffMatch[2]!);
+        const checkpointId = diffMatch[3]!;
+        const diff = await engine.getCheckpointDiff(agentId, sessionId, checkpointId);
         jsonResponse(res, { diff });
         return;
       }
@@ -251,6 +266,59 @@ const TIMELINE_HTML = /* html */ `<!DOCTYPE html>
   .badge-manual { background: rgba(210,153,34,0.15); color: var(--orange); }
   .badge-session { background: rgba(63,185,80,0.15); color: var(--green); }
   .badge-error { background: rgba(248,81,73,0.15); color: var(--red); }
+  .badge-child { background: rgba(188,143,243,0.15); color: var(--purple); }
+
+  :root { --purple: #bc8ff3; }
+
+  /* Session tree in selector */
+  .session-option-child { padding-left: 20px; }
+
+  /* Relation links */
+  .relation-section { margin-bottom: 20px; }
+  .relation-link {
+    display: inline-block;
+    padding: 4px 12px;
+    margin: 2px 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: monospace;
+    color: var(--accent);
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .relation-link:hover { border-color: var(--accent); }
+  .relation-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-right: 8px;
+  }
+
+  /* Child checkpoint items in timeline */
+  .timeline-item.child-session {
+    opacity: 0.7;
+    border-left: 2px solid var(--purple);
+    margin-left: 12px;
+  }
+  .timeline-item.child-session .timeline-node {
+    background: var(--purple);
+    width: 10px;
+    height: 10px;
+    left: -21px;
+    top: 14px;
+  }
+  .child-session-header {
+    padding: 6px 16px 6px 36px;
+    margin: 8px 8px 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--purple);
+    cursor: pointer;
+  }
+  .child-session-header:hover { text-decoration: underline; }
 
   /* Detail panel */
   .detail-header {
@@ -362,6 +430,8 @@ const TIMELINE_HTML = /* html */ `<!DOCTYPE html>
 const API = location.origin;
 let currentCheckpoints = [];
 let activeCheckpointId = null;
+let allSessions = [];
+let currentSession = null;
 
 const sessionSelect = document.getElementById('session-select');
 const timelinePanel = document.getElementById('timeline-panel');
@@ -377,34 +447,77 @@ async function fetchJSON(path) {
 
 async function loadSessions() {
   try {
-    const sessions = await fetchJSON('/api/sessions');
-    sessionSelect.innerHTML = '';
-    if (sessions.length === 0) {
-      sessionSelect.innerHTML = '<option value="">No sessions found</option>';
-      return;
-    }
-    sessionSelect.innerHTML = '<option value="">Select a session...</option>';
-    for (const s of sessions) {
-      const opt = document.createElement('option');
-      opt.value = s.agentId + '/' + s.sessionId;
-      opt.textContent = s.agentId + ' / ' + s.sessionId.slice(0, 12) + '...';
-      sessionSelect.appendChild(opt);
-    }
-    // Auto-select if only one session
-    if (sessions.length === 1) {
+    allSessions = await fetchJSON('/api/sessions');
+    renderSessionSelect();
+    // Auto-select if only one root session
+    const roots = allSessions.filter(s => !s.parentSession);
+    if (roots.length === 1 && allSessions.length === 1) {
       sessionSelect.selectedIndex = 1;
-      loadCheckpoints(sessions[0].agentId, sessions[0].sessionId);
+      selectSession(roots[0].agentId, roots[0].sessionId);
     }
   } catch (e) {
     sessionSelect.innerHTML = '<option value="">Error loading sessions</option>';
   }
 }
 
+function renderSessionSelect() {
+  sessionSelect.innerHTML = '';
+  if (allSessions.length === 0) {
+    sessionSelect.innerHTML = '<option value="">No sessions found</option>';
+    return;
+  }
+  sessionSelect.innerHTML = '<option value="">Select a session...</option>';
+
+  // Build tree: roots first, then children indented
+  const roots = allSessions.filter(s => !s.parentSession);
+  const childMap = {};
+  for (const s of allSessions) {
+    if (s.parentSession) {
+      const pk = s.parentSession.agentId + '/' + s.parentSession.sessionId;
+      if (!childMap[pk]) childMap[pk] = [];
+      childMap[pk].push(s);
+    }
+  }
+
+  function addSession(s, depth) {
+    const opt = document.createElement('option');
+    opt.value = s.agentId + '/' + s.sessionId;
+    const prefix = depth > 0 ? '\\u2514\\u2500 ' : '';
+    const indent = '\\u00A0\\u00A0'.repeat(depth);
+    const label = s.sessionId.length > 16 ? s.sessionId.slice(0, 14) + '..' : s.sessionId;
+    const count = s.checkpointCount > 0 ? ' (' + s.checkpointCount + ')' : '';
+    opt.textContent = indent + prefix + s.agentId + ' / ' + label + count;
+    sessionSelect.appendChild(opt);
+
+    const key = s.agentId + '/' + s.sessionId;
+    for (const child of (childMap[key] || [])) {
+      addSession(child, depth + 1);
+    }
+  }
+
+  for (const root of roots) addSession(root, 0);
+  // Also show orphan children (parent not in list)
+  for (const s of allSessions) {
+    if (s.parentSession) {
+      const pk = s.parentSession.agentId + '/' + s.parentSession.sessionId;
+      const parentExists = allSessions.some(p => p.agentId + '/' + p.sessionId === pk);
+      if (!parentExists) addSession(s, 0);
+    }
+  }
+}
+
+function selectSession(agentId, sessionId) {
+  currentSession = allSessions.find(s => s.agentId === agentId && s.sessionId === sessionId) || null;
+  sessionSelect.value = agentId + '/' + sessionId;
+  loadCheckpoints(agentId, sessionId);
+}
+
 sessionSelect.addEventListener('change', () => {
   const val = sessionSelect.value;
   if (!val) return;
-  const [agentId, sessionId] = val.split('/');
-  loadCheckpoints(agentId, sessionId);
+  const [agentId, ...rest] = val.split('/');
+  const sessionId = rest.join('/');
+  selectSession(agentId, sessionId);
 });
 
 // ── Checkpoints ──
@@ -416,62 +529,100 @@ async function loadCheckpoints(agentId, sessionId) {
 
   try {
     const checkpoints = await fetchJSON('/api/sessions/' + agentId + '/' + sessionId + '/checkpoints');
-    currentCheckpoints = checkpoints;
 
-    if (checkpoints.length === 0) {
+    // Also load child session checkpoints
+    const children = currentSession?.childSessions || [];
+    const childGroups = [];
+    for (const child of children) {
+      try {
+        const childCps = await fetchJSON('/api/sessions/' + child.agentId + '/' + encodeURIComponent(child.sessionId) + '/checkpoints');
+        if (childCps.length > 0) {
+          childGroups.push({ ref: child, checkpoints: childCps });
+        }
+      } catch { /* skip */ }
+    }
+
+    currentCheckpoints = [...checkpoints, ...childGroups.flatMap(g => g.checkpoints)];
+
+    if (checkpoints.length === 0 && childGroups.length === 0) {
       timelinePanel.innerHTML = '<div class="empty-state">No checkpoints in this session</div>';
       return;
     }
 
-    renderTimeline(checkpoints);
+    renderTimeline(checkpoints, childGroups);
   } catch (e) {
     timelinePanel.innerHTML = '<div class="empty-state">Error: ' + e.message + '</div>';
   }
 }
 
-function renderTimeline(checkpoints) {
+function renderTimeline(checkpoints, childGroups) {
   // Show newest first
   const sorted = [...checkpoints].reverse();
 
   let html = '<div class="timeline">';
   for (const cp of sorted) {
-    const isError = cp.toolResult?.success === false;
-    const isManual = cp.trigger.type === 'manual';
-    const isSession = cp.trigger.type === 'session_start';
-
-    let cls = 'timeline-item';
-    if (isError) cls += ' error';
-    else if (isManual) cls += ' manual';
-    else if (isSession) cls += ' session-start';
-
-    const time = formatTime(cp.createdAt);
-    const title = getTriggerLabel(cp);
-    const filesCount = cp.snapshot.filesChanged.length;
-    const duration = cp.toolDurationMs != null ? formatDuration(cp.toolDurationMs) : null;
-
-    html += '<div class="' + cls + '" data-id="' + cp.id + '">';
-    html += '<div class="timeline-node"></div>';
-    html += '<div class="timeline-time">' + time + '</div>';
-    html += '<div class="timeline-title">' + title + '</div>';
-    html += '<div class="timeline-meta">';
-    html += '<span>' + filesCount + ' file' + (filesCount !== 1 ? 's' : '') + '</span>';
-    if (duration) html += '<span>' + duration + '</span>';
-    if (isError) html += '<span class="badge badge-error">error</span>';
-    if (isManual) html += '<span class="badge badge-manual">manual</span>';
-    if (isSession) html += '<span class="badge badge-session">session start</span>';
-    if (cp.trigger.toolName && !isManual) html += '<span class="badge badge-tool">' + escapeHtml(cp.trigger.toolName) + '</span>';
-    html += '</div></div>';
+    html += renderTimelineItem(cp, false);
   }
+
+  // Render child session groups
+  for (const group of (childGroups || [])) {
+    const label = group.ref.sessionId.length > 20
+      ? group.ref.sessionId.slice(0, 18) + '..'
+      : group.ref.sessionId;
+    html += '<div class="child-session-header" data-agent="' + escapeHtml(group.ref.agentId)
+      + '" data-session="' + escapeHtml(group.ref.sessionId)
+      + '">&#9662; Child: ' + escapeHtml(group.ref.agentId) + ' / ' + escapeHtml(label)
+      + ' (' + group.checkpoints.length + ')</div>';
+    const childSorted = [...group.checkpoints].reverse();
+    for (const cp of childSorted) {
+      html += renderTimelineItem(cp, true);
+    }
+  }
+
   html += '</div>';
   timelinePanel.innerHTML = html;
 
   // Click handlers
   timelinePanel.querySelectorAll('.timeline-item').forEach(el => {
+    el.addEventListener('click', () => selectCheckpoint(el.dataset.id));
+  });
+  timelinePanel.querySelectorAll('.child-session-header').forEach(el => {
     el.addEventListener('click', () => {
-      const id = el.dataset.id;
-      selectCheckpoint(id);
+      selectSession(el.dataset.agent, el.dataset.session);
     });
   });
+}
+
+function renderTimelineItem(cp, isChild) {
+  const isError = cp.toolResult?.success === false;
+  const isManual = cp.trigger.type === 'manual';
+  const isSession = cp.trigger.type === 'session_start';
+
+  let cls = 'timeline-item';
+  if (isChild) cls += ' child-session';
+  if (isError) cls += ' error';
+  else if (isManual) cls += ' manual';
+  else if (isSession) cls += ' session-start';
+
+  const time = formatTime(cp.createdAt);
+  const title = getTriggerLabel(cp);
+  const filesCount = cp.snapshot.filesChanged.length;
+  const duration = cp.toolDurationMs != null ? formatDuration(cp.toolDurationMs) : null;
+
+  let html = '<div class="' + cls + '" data-id="' + cp.id + '">';
+  html += '<div class="timeline-node"></div>';
+  html += '<div class="timeline-time">' + time + '</div>';
+  html += '<div class="timeline-title">' + title + '</div>';
+  html += '<div class="timeline-meta">';
+  html += '<span>' + filesCount + ' file' + (filesCount !== 1 ? 's' : '') + '</span>';
+  if (duration) html += '<span>' + duration + '</span>';
+  if (isError) html += '<span class="badge badge-error">error</span>';
+  if (isManual) html += '<span class="badge badge-manual">manual</span>';
+  if (isSession) html += '<span class="badge badge-session">session start</span>';
+  if (isChild) html += '<span class="badge badge-child">child</span>';
+  if (cp.trigger.toolName && !isManual) html += '<span class="badge badge-tool">' + escapeHtml(cp.trigger.toolName) + '</span>';
+  html += '</div></div>';
+  return html;
 }
 
 function selectCheckpoint(id) {
@@ -489,10 +640,38 @@ async function renderDetail(checkpointId) {
   const cp = currentCheckpoints.find(c => c.id === checkpointId);
   if (!cp) return;
 
+  // Find which session this checkpoint belongs to
+  const cpSession = allSessions.find(s => s.agentId === cp.agentId && s.sessionId === cp.sessionId);
+
   let html = '<div class="detail-header">';
   html += '<h2>' + escapeHtml(cp.id) + '</h2>';
   html += '<div class="sub">' + cp.createdAt + '</div>';
   html += '</div>';
+
+  // Session relations
+  if (cpSession) {
+    const hasParent = cpSession.parentSession;
+    const hasChildren = cpSession.childSessions && cpSession.childSessions.length > 0;
+    if (hasParent || hasChildren) {
+      html += '<div class="relation-section">';
+      if (hasParent) {
+        const p = cpSession.parentSession;
+        const pLabel = p.sessionId.length > 16 ? p.sessionId.slice(0, 14) + '..' : p.sessionId;
+        html += '<span class="relation-label">Parent:</span>';
+        html += '<span class="relation-link" data-nav-agent="' + escapeAttr(p.agentId) + '" data-nav-session="' + escapeAttr(p.sessionId) + '">';
+        html += escapeHtml(p.agentId) + ' / ' + escapeHtml(pLabel) + '</span> ';
+      }
+      if (hasChildren) {
+        html += '<span class="relation-label">Children:</span>';
+        for (const c of cpSession.childSessions) {
+          const cLabel = c.sessionId.length > 16 ? c.sessionId.slice(0, 14) + '..' : c.sessionId;
+          html += '<span class="relation-link" data-nav-agent="' + escapeAttr(c.agentId) + '" data-nav-session="' + escapeAttr(c.sessionId) + '">';
+          html += escapeHtml(c.agentId) + ' / ' + escapeHtml(cLabel) + '</span> ';
+        }
+      }
+      html += '</div>';
+    }
+  }
 
   // Info grid
   html += '<div class="detail-section"><h3>Details</h3>';
@@ -500,7 +679,8 @@ async function renderDetail(checkpointId) {
   html += dt('Trigger') + dd(cp.trigger.type);
   if (cp.trigger.toolName) html += dt('Tool') + dd(cp.trigger.toolName);
   if (cp.trigger.toolCallId) html += dt('Tool Call ID') + dd(cp.trigger.toolCallId);
-  html += dt('Parent') + dd(cp.parentId || '(none)');
+  html += dt('Agent / Session') + dd(cp.agentId + ' / ' + cp.sessionId);
+  html += dt('Parent CP') + dd(cp.parentId || '(none)');
   html += dt('Backend') + dd(cp.snapshot.backendType);
   html += dt('Snapshot Ref') + dd(cp.snapshot.snapshotRef);
   if (cp.toolDurationMs != null) html += dt('Duration') + dd(formatDuration(cp.toolDurationMs));
@@ -529,6 +709,13 @@ async function renderDetail(checkpointId) {
   html += '</div>';
 
   detailPanel.innerHTML = html;
+
+  // Bind relation link clicks
+  detailPanel.querySelectorAll('.relation-link[data-nav-agent]').forEach(el => {
+    el.addEventListener('click', () => {
+      selectSession(el.dataset.navAgent, el.dataset.navSession);
+    });
+  });
 
   // Load diff async
   try {
@@ -576,6 +763,10 @@ function escapeHtml(s) {
   const el = document.createElement('span');
   el.textContent = s;
   return el.innerHTML;
+}
+
+function escapeAttr(s) {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
 function dt(label) { return '<dt>' + label + '</dt>'; }
