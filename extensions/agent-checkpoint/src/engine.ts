@@ -156,11 +156,19 @@ export class CheckpointEngine {
       }
     }
 
-    // Trim manifest to restored point
+    // Trim manifest to restored point and clean up orphaned snapshots/metadata
     const manifest = await this.store.getOrCreateManifest(agentId, sessionId);
-    manifest.currentHead = checkpointId;
     const idx = manifest.checkpoints.indexOf(checkpointId);
-    if (idx >= 0) manifest.checkpoints = manifest.checkpoints.slice(0, idx + 1);
+    if (idx >= 0) {
+      const orphaned = manifest.checkpoints.slice(idx + 1);
+      for (const orphanId of orphaned) {
+        const orphanMeta = await this.store.getCheckpoint(agentId, sessionId, orphanId);
+        if (orphanMeta) await this.backend.deleteSnapshot(orphanMeta.snapshot.snapshotRef);
+        await this.store.deleteCheckpoint(agentId, sessionId, orphanId);
+      }
+    }
+    manifest.currentHead = checkpointId;
+    manifest.checkpoints = manifest.checkpoints.slice(0, idx >= 0 ? idx + 1 : undefined);
     await this.store.writeManifest(agentId, sessionId, manifest);
 
     this.logger?.info(

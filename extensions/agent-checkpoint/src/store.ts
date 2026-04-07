@@ -184,8 +184,12 @@ export class CheckpointStore {
   }
 
   private async writeJson(filePath: string, data: unknown): Promise<void> {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf8");
+    const dir = path.dirname(filePath);
+    await fs.mkdir(dir, { recursive: true });
+    // Atomic write: write to temp file then rename to avoid corruption on concurrent access
+    const tmpPath = `${filePath}.tmp-${Date.now()}`;
+    await fs.writeFile(tmpPath, JSON.stringify(data, null, 2), "utf8");
+    await fs.rename(tmpPath, filePath);
   }
 
   private async readJson<T>(filePath: string): Promise<T | null> {
