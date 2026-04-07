@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import { ulid } from "ulid";
 import type { PluginLogger } from "openclaw/plugin-sdk";
 import type { SnapshotBackend } from "./snapshot-backend.js";
 import { CheckpointStore } from "./store.js";
@@ -67,18 +66,18 @@ export class CheckpointEngine {
       toolDurationMs, toolResult, sessionTranscriptPath,
     } = params;
 
-    const checkpointId = ulid();
     const sessionKey = `${agentId}:${sessionId}`;
 
-    // Resolve parent ref for diff computation
+    // Resolve parent ref for diff computation + sequence number
     let parentRef = this.lastRefBySession.get(sessionKey);
-    if (!parentRef) {
-      const manifest = await this.store.getManifest(agentId, sessionId);
-      if (manifest?.currentHead) {
-        const lastMeta = await this.store.getCheckpoint(agentId, sessionId, manifest.currentHead);
-        if (lastMeta) parentRef = lastMeta.snapshot.snapshotRef;
-      }
+    const manifest = await this.store.getOrCreateManifest(agentId, sessionId);
+    if (!parentRef && manifest.currentHead) {
+      const lastMeta = await this.store.getCheckpoint(agentId, sessionId, manifest.currentHead);
+      if (lastMeta) parentRef = lastMeta.snapshot.snapshotRef;
     }
+
+    const seq = manifest.checkpoints.length + 1;
+    const checkpointId = buildCheckpointId(agentId, sessionId, seq, trigger);
 
     const snapshot = await this.backend.createSnapshot({
       workspaceDir,
@@ -88,7 +87,7 @@ export class CheckpointEngine {
 
     const transcript = await getTranscriptState(sessionTranscriptPath);
 
-    const parentId = await this.getCurrentHead(agentId, sessionId);
+    const parentId = manifest.currentHead;
 
     const meta: CheckpointMeta = {
       id: checkpointId,
@@ -221,5 +220,36 @@ async function truncateFile(filePath: string, byteOffset: number): Promise<void>
     await handle.truncate(byteOffset);
   } finally {
     await handle.close();
+  }
+}
+
+/**
+ * Build a human-readable checkpoint ID.
+ * Format: {agent}-{session_prefix}-{seq:03d}-{trigger_abbr}
+ * Example: main-a1b2c3-001-exec, main-a1b2c3-002-start
+ */
+function buildCheckpointId(
+  agentId: string,
+  sessionId: string,
+  seq: number,
+  trigger: CheckpointTrigger,
+): string {
+  const agent = agentId.slice(0, 12);
+  const session = sessionId.slice(0, 6);
+  const seqStr = String(seq).padStart(3, "0");
+  const triggerAbbr = triggerToAbbr(trigger);
+  return `${agent}-${session}-${seqStr}-${triggerAbbr}`;
+}
+
+function triggerToAbbr(trigger: CheckpointTrigger): string {
+  switch (trigger.type) {
+    case "session_start":
+      return "start";
+    case "manual":
+      return "manual";
+    case "after_tool_call":
+      return trigger.toolName
+        ? trigger.toolName.slice(0, 16).toLowerCase().replace(/[^a-z0-9]/g, "-")
+        : "tool";
   }
 }
