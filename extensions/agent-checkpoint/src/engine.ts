@@ -7,6 +7,7 @@ import type {
   CheckpointPluginConfig,
   CheckpointTrigger,
   RestoreScope,
+  SessionRef,
 } from "./types.js";
 
 export type CreateCheckpointParams = {
@@ -195,6 +196,30 @@ export class CheckpointEngine {
       snapshotRef: meta.snapshot.snapshotRef,
       parentRef,
     });
+  }
+
+  /**
+   * Link parent and child session manifests bidirectionally.
+   * Called from the subagent_spawned hook.
+   */
+  async linkParentChild(parentRef: SessionRef, childRef: SessionRef): Promise<void> {
+    // Set parentSession on child manifest
+    const childManifest = await this.store.getOrCreateManifest(childRef.agentId, childRef.sessionId);
+    childManifest.parentSession = parentRef;
+    await this.store.writeManifest(childRef.agentId, childRef.sessionId, childManifest);
+
+    // Append to childSessions on parent manifest
+    const parentManifest = await this.store.getOrCreateManifest(parentRef.agentId, parentRef.sessionId);
+    const children = parentManifest.childSessions ?? [];
+    if (!children.some((c) => c.sessionId === childRef.sessionId && c.agentId === childRef.agentId)) {
+      children.push(childRef);
+      parentManifest.childSessions = children;
+      await this.store.writeManifest(parentRef.agentId, parentRef.sessionId, parentManifest);
+    }
+
+    this.logger?.info(
+      `Linked parent ${parentRef.agentId}/${parentRef.sessionId} ↔ child ${childRef.agentId}/${childRef.sessionId}`,
+    );
   }
 
   async pruneOld(): Promise<number> {
