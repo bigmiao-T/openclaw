@@ -107,8 +107,20 @@ export class CheckpointStore {
 
   async listSessions(
     agentId?: string,
-  ): Promise<Array<{ agentId: string; sessionId: string }>> {
-    const results: Array<{ agentId: string; sessionId: string }> = [];
+  ): Promise<Array<{
+    agentId: string;
+    sessionId: string;
+    checkpointCount: number;
+    parentSession: import("./types.js").SessionRef | null;
+    childSessions: import("./types.js").SessionRef[];
+  }>> {
+    const results: Array<{
+      agentId: string;
+      sessionId: string;
+      checkpointCount: number;
+      parentSession: import("./types.js").SessionRef | null;
+      childSessions: import("./types.js").SessionRef[];
+    }> = [];
     try {
       const agentIds = agentId
         ? [agentId]
@@ -120,7 +132,15 @@ export class CheckpointStore {
         try {
           const sessions = await fs.readdir(path.join(this.rootDir, aid), { withFileTypes: true });
           for (const sd of sessions) {
-            if (sd.isDirectory()) results.push({ agentId: aid, sessionId: sd.name });
+            if (!sd.isDirectory()) continue;
+            const manifest = await this.getManifest(aid, sd.name);
+            results.push({
+              agentId: aid,
+              sessionId: sd.name,
+              checkpointCount: manifest?.checkpoints?.length ?? 0,
+              parentSession: manifest?.parentSession ?? null,
+              childSessions: manifest?.childSessions ?? [],
+            });
           }
         } catch {
           /* agent dir may not exist */
