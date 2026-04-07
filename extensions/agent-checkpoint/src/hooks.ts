@@ -3,8 +3,7 @@ import type { CheckpointEngine } from "./engine.js";
 
 /**
  * Workspace directory cache.
- * PluginHookToolContext has no workspaceDir, so we cache it
- * from the tool factory context where it IS available.
+ * Keyed by agentId so each agent (including sub-agents) resolves its own workspace.
  */
 const workspaceDirs = new Map<string, string>();
 
@@ -20,6 +19,7 @@ export function getCachedWorkspaceDir(agentId: string): string | undefined {
 
 /**
  * Register checkpoint hooks:
+ * - before_agent_start: cache workspaceDir early (before session_start fires)
  * - after_tool_call: auto-create checkpoint for mutating tools
  * - session_start: create baseline checkpoint
  */
@@ -27,6 +27,14 @@ export function registerCheckpointHooks(
   api: OpenClawPluginApi,
   engine: CheckpointEngine,
 ): void {
+  // Cache workspaceDir from agent context — fires before session_start,
+  // so sub-agents have their workspaceDir ready for the baseline checkpoint.
+  api.on("before_agent_start", (_event, context) => {
+    if (context.agentId && context.workspaceDir) {
+      workspaceDirs.set(context.agentId, context.workspaceDir);
+    }
+  });
+
   api.on("after_tool_call", async (event, context) => {
     const toolName = event.toolName ?? "";
     if (!engine.shouldCreateCheckpoint(toolName)) return;
