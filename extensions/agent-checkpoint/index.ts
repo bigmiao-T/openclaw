@@ -13,18 +13,16 @@ export default definePluginEntry({
   id: "agent-checkpoint",
   name: "Agent Checkpoint",
   description: "Automatic checkpoint and rollback for long-running agent tasks.",
-  async register(api: OpenClawPluginApi) {
+  register(api: OpenClawPluginApi) {
     const config = resolveConfig(api.pluginConfig);
     if (!config.enabled) return;
 
-    const backend = await createSnapshotBackend({
+    const backend = createSnapshotBackend({
       type: config.backendType as BackendType,
       storageDir: config.storagePath,
       backendConfig: config.backendConfig,
       logger: api.logger,
     });
-
-    if (backend.init) await backend.init();
 
     const store = new CheckpointStore({
       rootDir: path.join(config.storagePath, "meta"),
