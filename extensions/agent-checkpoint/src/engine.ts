@@ -44,7 +44,6 @@ export class CheckpointEngine {
   private readonly config: CheckpointPluginConfig;
   private readonly logger?: PluginLogger;
   private readonly taskFlowDbPath?: string;
-  private readonly restartAfterRestore: boolean;
 
   /** Tracks last snapshotRef per session for parent chain. */
   private readonly lastRefBySession = new Map<string, string>();
@@ -55,15 +54,12 @@ export class CheckpointEngine {
     logger?: PluginLogger;
     /** Path to task flow SQLite DB for backup/restore. */
     taskFlowDbPath?: string;
-    /** Send SIGUSR1 after restore to trigger gateway graceful restart. Default: true. */
-    restartAfterRestore?: boolean;
   }) {
     this.store = params.store;
     this.backend = params.backend;
     this.config = params.config;
     this.logger = params.logger;
     this.taskFlowDbPath = params.taskFlowDbPath;
-    this.restartAfterRestore = params.restartAfterRestore ?? true;
   }
 
   shouldCreateCheckpoint(toolName: string): boolean {
@@ -188,12 +184,6 @@ export class CheckpointEngine {
     this.logger?.info(
       `Restored to ${checkpointId} (scope: ${scope}, files: ${filesRestored}, transcript: ${transcriptRestored})`,
     );
-
-    // Trigger gateway graceful restart so in-memory state reloads from disk
-    if (this.restartAfterRestore) {
-      this.logger?.info("Sending SIGUSR1 to trigger gateway restart for state reload");
-      process.kill(process.pid, "SIGUSR1");
-    }
 
     return { restoredCheckpoint: meta, scope, filesRestored, transcriptRestored };
   }
