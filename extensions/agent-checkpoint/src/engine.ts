@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import type { PluginLogger } from "openclaw/plugin-sdk";
 import type { SnapshotBackend } from "./snapshot-backend.js";
 import { CheckpointStore } from "./store.js";
@@ -9,6 +10,9 @@ import type {
   RestoreScope,
   SessionRef,
 } from "./types.js";
+
+const TASKFLOW_DB_BACKUP_NAME = "_taskflow.sqlite";
+const TASKFLOW_DB_SUFFIXES = ["", "-wal", "-shm"];
 
 export type CreateCheckpointParams = {
   agentId: string;
@@ -39,6 +43,8 @@ export class CheckpointEngine {
   private readonly backend: SnapshotBackend;
   private readonly config: CheckpointPluginConfig;
   private readonly logger?: PluginLogger;
+  private readonly taskFlowDbPath?: string;
+  private readonly restartAfterRestore: boolean;
 
   /** Tracks last snapshotRef per session for parent chain. */
   private readonly lastRefBySession = new Map<string, string>();
@@ -47,11 +53,17 @@ export class CheckpointEngine {
     backend: SnapshotBackend;
     config: CheckpointPluginConfig;
     logger?: PluginLogger;
+    /** Path to task flow SQLite DB for backup/restore. */
+    taskFlowDbPath?: string;
+    /** Send SIGUSR1 after restore to trigger gateway graceful restart. Default: true. */
+    restartAfterRestore?: boolean;
   }) {
     this.store = params.store;
     this.backend = params.backend;
     this.config = params.config;
     this.logger = params.logger;
+    this.taskFlowDbPath = params.taskFlowDbPath;
+    this.restartAfterRestore = params.restartAfterRestore ?? true;
   }
 
   shouldCreateCheckpoint(toolName: string): boolean {
@@ -110,6 +122,9 @@ export class CheckpointEngine {
 
     await this.store.saveCheckpoint(meta);
     this.lastRefBySession.set(sessionKey, snapshot.snapshotRef);
+
+    // Backup task flow SQLite alongside the snapshot
+    await this.backupTaskFlowDb(snapshot.snapshotRef);
 
     await this.store.pruneExcessWithBackend(
       agentId, sessionId, this.config.maxCheckpointsPerSession, this.backend,
@@ -171,9 +186,18 @@ export class CheckpointEngine {
     manifest.checkpoints = manifest.checkpoints.slice(0, idx >= 0 ? idx + 1 : undefined);
     await this.store.writeManifest(agentId, sessionId, manifest);
 
+    // Restore task flow SQLite from backup
+    await this.restoreTaskFlowDb(meta.snapshot.snapshotRef);
+
     this.logger?.info(
       `Restored to ${checkpointId} (scope: ${scope}, files: ${filesRestored}, transcript: ${transcriptRestored})`,
     );
+
+    // Trigger gateway graceful restart so in-memory state reloads from disk
+    if (this.restartAfterRestore) {
+      this.logger?.info("Sending SIGUSR1 to trigger gateway restart for state reload");
+      process.kill(process.pid, "SIGUSR1");
+    }
 
     return { restoredCheckpoint: meta, scope, filesRestored, transcriptRestored };
   }
@@ -229,6 +253,41 @@ export class CheckpointEngine {
   private async getCurrentHead(agentId: string, sessionId: string): Promise<string | null> {
     const manifest = await this.store.getManifest(agentId, sessionId);
     return manifest?.currentHead ?? null;
+  }
+
+  private snapshotDir(snapshotRef: string): string {
+    return path.join(this.config.storagePath, "snapshots", snapshotRef);
+  }
+
+  private async backupTaskFlowDb(snapshotRef: string): Promise<void> {
+    if (!this.taskFlowDbPath) return;
+    const dir = this.snapshotDir(snapshotRef);
+    for (const suffix of TASKFLOW_DB_SUFFIXES) {
+      const src = this.taskFlowDbPath + suffix;
+      const dst = path.join(dir, TASKFLOW_DB_BACKUP_NAME + suffix);
+      try {
+        await fs.copyFile(src, dst);
+      } catch {
+        // WAL/SHM files may not exist; ignore missing files
+      }
+    }
+  }
+
+  private async restoreTaskFlowDb(snapshotRef: string): Promise<void> {
+    if (!this.taskFlowDbPath) return;
+    const dir = this.snapshotDir(snapshotRef);
+    for (const suffix of TASKFLOW_DB_SUFFIXES) {
+      const src = path.join(dir, TASKFLOW_DB_BACKUP_NAME + suffix);
+      const dst = this.taskFlowDbPath + suffix;
+      try {
+        await fs.copyFile(src, dst);
+      } catch {
+        // Backup may not exist for old checkpoints or WAL/SHM files
+        if (suffix === "") {
+          this.logger?.warn(`Task flow DB backup not found: ${src}`);
+        }
+      }
+    }
   }
 }
 

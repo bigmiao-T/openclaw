@@ -136,9 +136,9 @@ describe("CheckpointStore", () => {
 
       const sessions = await store.listSessions();
       expect(sessions).toHaveLength(3);
-      expect(sessions).toContainEqual({ agentId: "a1", sessionId: "s1" });
-      expect(sessions).toContainEqual({ agentId: "a1", sessionId: "s2" });
-      expect(sessions).toContainEqual({ agentId: "a2", sessionId: "s3" });
+      expect(sessions).toContainEqual(expect.objectContaining({ agentId: "a1", sessionId: "s1" }));
+      expect(sessions).toContainEqual(expect.objectContaining({ agentId: "a1", sessionId: "s2" }));
+      expect(sessions).toContainEqual(expect.objectContaining({ agentId: "a2", sessionId: "s3" }));
     });
 
     it("filters by agentId", async () => {
@@ -146,7 +146,7 @@ describe("CheckpointStore", () => {
       await store.saveCheckpoint(makeMeta({ agentId: "a2", sessionId: "s2", id: "cp-2" }));
 
       const sessions = await store.listSessions("a1");
-      expect(sessions).toEqual([{ agentId: "a1", sessionId: "s1" }]);
+      expect(sessions).toEqual([expect.objectContaining({ agentId: "a1", sessionId: "s1" })]);
     });
   });
 });

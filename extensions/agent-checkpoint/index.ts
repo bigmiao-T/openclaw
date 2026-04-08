@@ -29,11 +29,15 @@ export default definePluginEntry({
       logger: api.logger,
     });
 
+    const stateDir = api.runtime.state.resolveStateDir();
+    const taskFlowDbPath = path.join(stateDir, "tasks", "flows", "registry.sqlite");
+
     const engine = new CheckpointEngine({
       store,
       backend,
       config,
       logger: api.logger,
+      taskFlowDbPath,
     });
 
     // Auto-checkpoint hooks
