@@ -48,7 +48,7 @@ function resolveCheckpointContext(
 /**
  * Register checkpoint hooks:
  * - before_agent_start: cache workspaceDir early (before session_start fires)
- * - after_tool_call: auto-create checkpoint for mutating tools
+ * - before_tool_call: auto-create checkpoint before mutating tools (preserves pre-tool state)
  * - session_start: create baseline checkpoint
  * - subagent_spawned: link parent ↔ child session manifests
  */
@@ -68,7 +68,7 @@ export function registerCheckpointHooks(
     }
   });
 
-  api.on("after_tool_call", async (event, context) => {
+  api.on("before_tool_call", async (event, context) => {
     const toolName = event.toolName ?? "";
     if (!engine.shouldCreateCheckpoint(toolName)) return;
 
@@ -82,18 +82,14 @@ export function registerCheckpointHooks(
         runId: (context as any).runId ?? "",
         workspaceDir: ctx.workspaceDir,
         trigger: {
-          type: "after_tool_call",
+          type: "before_tool_call",
           toolName,
           toolCallId: (context as any).toolCallId,
         },
-        toolDurationMs: event.durationMs,
-        toolResult: event.error
-          ? { success: false, errorMessage: String(event.error) }
-          : { success: true },
       });
       await engine.pruneExcess(ctx.agentId, ctx.sessionId);
     } catch (error) {
-      api.logger?.warn(`Checkpoint failed after ${toolName}: ${String(error)}`);
+      api.logger?.warn(`Checkpoint failed before ${toolName}: ${String(error)}`);
     }
   });
 
