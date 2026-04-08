@@ -103,7 +103,26 @@ export function registerCheckpointCommand(
           const result = await engine.restoreCheckpoint({
             agentId: found.agentId, sessionId: found.sessionId, checkpointId, workspaceDir, scope,
           });
-          return { text: `Restored to \`${result.restoredCheckpoint.id}\` (scope: ${result.scope})` };
+
+          const cp = result.restoredCheckpoint;
+          const trigger = cp.trigger;
+          const filesCount = cp.snapshot.filesChanged.length;
+          const time = new Date(cp.createdAt).toLocaleString();
+
+          let summary = `**Restored to checkpoint** \`${cp.id}\`\n`;
+          summary += `- **Time:** ${time}\n`;
+          summary += `- **Scope:** ${result.scope}\n`;
+          summary += `- **Files:** ${filesCount} file${filesCount !== 1 ? "s" : ""} restored\n`;
+
+          if (trigger.type === "before_tool_call" && trigger.toolName) {
+            summary += `\nThis checkpoint was saved **before** \`${trigger.toolName}\` executed. `;
+            summary += `The tool's changes have been undone.\n`;
+          }
+
+          summary += `\n> Your conversation history is intact. Tell the agent what to do next — `;
+          summary += `it can see the full context and continue from here.`;
+
+          return { text: summary };
         }
 
         case "delete": {

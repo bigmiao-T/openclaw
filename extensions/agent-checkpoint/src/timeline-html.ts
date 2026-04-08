@@ -962,7 +962,10 @@ async function restoreToCheckpoint(checkpointId, scope) {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Restore failed');
-        showToast('Restored to ' + data.checkpointId + ' (scope: ' + data.scope + ')', 'success');
+        let msg = 'Restored to ' + data.checkpointId;
+        if (data.triggerInfo) msg += ' — ' + data.triggerInfo;
+        if (data.hint) msg += ' ' + data.hint;
+        showToast(msg, 'success');
         // Reload checkpoints since later ones were pruned
         if (currentSession) {
           loadCheckpoints(currentSession.agentId, currentSession.sessionId);
