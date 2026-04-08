@@ -117,12 +117,18 @@ export async function startTimelineServer(params: TimelineServerParams): Promise
           workspaceDir: getWorkspaceDir(),
           scope: scope ?? "files",
         });
+        const cp = result.restoredCheckpoint;
+        const triggerInfo = cp.trigger.type === "before_tool_call" && cp.trigger.toolName
+          ? `Saved before ${cp.trigger.toolName} — tool changes undone.`
+          : undefined;
         jsonResponse(res, {
           ok: true,
-          checkpointId: result.restoredCheckpoint.id,
+          checkpointId: cp.id,
           scope: result.scope,
           filesRestored: result.filesRestored,
           transcriptRestored: result.transcriptRestored,
+          triggerInfo,
+          hint: "Conversation history is intact. Tell the agent what to do next.",
         });
         return;
       }
