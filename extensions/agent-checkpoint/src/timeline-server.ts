@@ -9,7 +9,7 @@ import type { CheckpointMeta } from "./types.js";
 import { TIMELINE_HTML } from "./timeline-html.js";
 
 /** Unified timeline event for the timeline viewer API. */
-type TimelineEvent = {
+export type TimelineEvent = {
   type: "user_message" | "assistant_reply" | "tool_call" | "tool_result" | "checkpoint" | "session_start" | "compaction";
   timestamp: string;
   /** Epoch ms for reliable numeric sorting (avoids string format inconsistencies). */
@@ -26,7 +26,7 @@ type TimelineEvent = {
 };
 
 /** Parse any timestamp (ISO string or epoch ms number) to epoch ms. */
-function toEpochMs(ts: unknown): number {
+export function toEpochMs(ts: unknown): number {
   if (typeof ts === "number") return ts;
   if (typeof ts === "string") {
     const ms = Date.parse(ts);
@@ -310,9 +310,52 @@ async function readSessionTranscript(agentId: string, sessionId: string): Promis
  * tiebreaker by seq (source order — JSONL line number for transcript events,
  * fractional insertion point for checkpoints).
  */
-function buildTimeline(transcriptEvents: TimelineEvent[], checkpoints: CheckpointMeta[]): TimelineEvent[] {
+export function buildTimeline(transcriptEvents: TimelineEvent[], checkpoints: CheckpointMeta[]): TimelineEvent[] {
+  // Index tool_call events by toolName for checkpoint→tool_call matching.
+  // A before_tool_call checkpoint is created AFTER the JSONL records the
+  // assistant tool_call block, so the checkpoint's epochMs > tool_call's epochMs.
+  // To enforce the display order checkpoint → tool_call → tool_result, we snap
+  // the checkpoint's epochMs to the matching tool_call's epochMs so the
+  // eventTypeWeight tiebreaker activates.
+  const toolCallsByName = new Map<string, TimelineEvent[]>();
+  for (const ev of transcriptEvents) {
+    if (ev.type === "tool_call" && ev.toolName) {
+      let arr = toolCallsByName.get(ev.toolName);
+      if (!arr) {
+        arr = [];
+        toolCallsByName.set(ev.toolName, arr);
+      }
+      arr.push(ev);
+    }
+  }
+
+  // Track which tool_call events have been claimed by a checkpoint.
+  const claimedToolCalls = new Set<TimelineEvent>();
+
   const cpEvents: TimelineEvent[] = checkpoints.map((cp, i) => {
-    const epochMs = toEpochMs(cp.createdAt);
+    let epochMs = toEpochMs(cp.createdAt);
+
+    // For before_tool_call checkpoints, find the closest preceding tool_call
+    // with matching toolName and snap epochMs to it.
+    if (cp.trigger.type === "before_tool_call" && cp.trigger.toolName) {
+      const candidates = toolCallsByName.get(cp.trigger.toolName) ?? [];
+      let bestMatch: TimelineEvent | undefined;
+      let bestDist = Infinity;
+      for (const tc of candidates) {
+        if (claimedToolCalls.has(tc)) continue;
+        // Tool call should be just before or at checkpoint time (within 10s window)
+        const dist = epochMs - tc.epochMs;
+        if (dist >= 0 && dist < 10_000 && dist < bestDist) {
+          bestDist = dist;
+          bestMatch = tc;
+        }
+      }
+      if (bestMatch) {
+        epochMs = bestMatch.epochMs;
+        claimedToolCalls.add(bestMatch);
+      }
+    }
+
     return {
       type: "checkpoint" as const,
       seq: findInsertionSeq(transcriptEvents, epochMs, i),
