@@ -30,6 +30,8 @@ export type RestoreCheckpointResult = {
   scope: RestoreScope;
   filesRestored: boolean;
   transcriptRestored: boolean;
+  /** Diff of changes that were undone (empty string if unavailable). */
+  diff: string;
 };
 
 /**
@@ -181,11 +183,19 @@ export class CheckpointEngine {
     // Restore task flow SQLite from backup
     await this.restoreTaskFlowDb(meta.snapshot.snapshotRef);
 
+    // Compute diff of changes that were undone
+    let diff = "";
+    try {
+      diff = await this.getCheckpointDiff(agentId, sessionId, checkpointId);
+    } catch {
+      // Diff is best-effort; don't fail restore if it's unavailable
+    }
+
     this.logger?.info(
       `Restored to ${checkpointId} (scope: ${scope}, files: ${filesRestored}, transcript: ${transcriptRestored})`,
     );
 
-    return { restoredCheckpoint: meta, scope, filesRestored, transcriptRestored };
+    return { restoredCheckpoint: meta, scope, filesRestored, transcriptRestored, diff };
   }
 
   async getCheckpointDiff(

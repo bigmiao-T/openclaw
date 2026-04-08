@@ -1,15 +1,17 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry";
 import type { CheckpointEngine } from "./engine.js";
+import { buildContinuationContext } from "./restore-context.js";
 import type { RestoreScope } from "./types.js";
 
 const RESTORE_SCOPES: RestoreScope[] = ["files", "transcript", "all"];
 
 const CheckpointParams = Type.Object({
-  action: Type.Unsafe<"list" | "create" | "restore">({
+  action: Type.Unsafe<"list" | "create" | "restore" | "restore_and_continue">({
     type: "string",
-    enum: ["list", "create", "restore"],
-    description: "The checkpoint action to perform.",
+    enum: ["list", "create", "restore", "restore_and_continue"],
+    description:
+      "The checkpoint action to perform. Use restore_and_continue to restore and get rich context for continuing the task.",
   }),
   checkpoint_id: Type.Optional(Type.String({ description: "Checkpoint ID for restore action." })),
   scope: Type.Optional(
@@ -33,7 +35,7 @@ export function createCheckpointTool(params: {
     name: "checkpoint",
     label: "Checkpoint",
     description:
-      "Manage workspace checkpoints. Actions: list (show checkpoints), create (manual checkpoint), restore (rollback to a checkpoint).",
+      "Manage workspace checkpoints. Actions: list (show checkpoints), create (manual checkpoint), restore (rollback to a checkpoint), restore_and_continue (restore and get context to continue the task).",
     parameters: CheckpointParams,
 
     async execute(toolCallId: string, args: CheckpointArgs) {
@@ -111,6 +113,43 @@ export function createCheckpointTool(params: {
 
           return {
             content: [{ type: "text" as const, text: `Restored to ${result.restoredCheckpoint.id} (scope: ${result.scope}, files: ${result.filesRestored}, transcript: ${result.transcriptRestored})` }],
+            details: { action, checkpointId, scope: result.scope },
+          };
+        }
+
+        case "restore_and_continue": {
+          const checkpointId = args.checkpoint_id;
+          if (!checkpointId) {
+            return {
+              content: [{ type: "text" as const, text: "Error: checkpoint_id is required for restore_and_continue." }],
+              details: { action, error: true },
+            };
+          }
+
+          const rawScope = args.scope;
+          const scope: RestoreScope | undefined =
+            rawScope && RESTORE_SCOPES.includes(rawScope as RestoreScope)
+              ? (rawScope as RestoreScope)
+              : undefined;
+
+          const result = await engine.restoreCheckpoint({
+            agentId,
+            sessionId,
+            checkpointId,
+            workspaceDir,
+            scope,
+          });
+
+          const continuation = buildContinuationContext({
+            checkpoint: result.restoredCheckpoint,
+            diff: result.diff,
+            scope: result.scope,
+            filesRestored: result.filesRestored,
+            transcriptRestored: result.transcriptRestored,
+          });
+
+          return {
+            content: [{ type: "text" as const, text: continuation.agentPrompt }],
             details: { action, checkpointId, scope: result.scope },
           };
         }

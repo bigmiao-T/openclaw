@@ -3,6 +3,7 @@ import os from "node:os";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 import type { CheckpointEngine } from "./engine.js";
 import type { CheckpointHookState } from "./hooks.js";
+import { buildContinuationContext } from "./restore-context.js";
 import { startTimelineServer, type TimelineServer, type TimelineServerParams } from "./timeline-server.js";
 
 /**
@@ -104,25 +105,15 @@ export function registerCheckpointCommand(
             agentId: found.agentId, sessionId: found.sessionId, checkpointId, workspaceDir, scope,
           });
 
-          const cp = result.restoredCheckpoint;
-          const trigger = cp.trigger;
-          const filesCount = cp.snapshot.filesChanged.length;
-          const time = new Date(cp.createdAt).toLocaleString();
+          const continuation = buildContinuationContext({
+            checkpoint: result.restoredCheckpoint,
+            diff: result.diff,
+            scope: result.scope,
+            filesRestored: result.filesRestored,
+            transcriptRestored: result.transcriptRestored,
+          });
 
-          let summary = `**Restored to checkpoint** \`${cp.id}\`\n`;
-          summary += `- **Time:** ${time}\n`;
-          summary += `- **Scope:** ${result.scope}\n`;
-          summary += `- **Files:** ${filesCount} file${filesCount !== 1 ? "s" : ""} restored\n`;
-
-          if (trigger.type === "before_tool_call" && trigger.toolName) {
-            summary += `\nThis checkpoint was saved **before** \`${trigger.toolName}\` executed. `;
-            summary += `The tool's changes have been undone.\n`;
-          }
-
-          summary += `\n> Your conversation history is intact. Tell the agent what to do next — `;
-          summary += `it can see the full context and continue from here.`;
-
-          return { text: summary };
+          return { text: continuation.summary };
         }
 
         case "delete": {
