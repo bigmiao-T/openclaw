@@ -1,10 +1,23 @@
+import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import type { CheckpointEngine } from "./engine.js";
 import type { CheckpointHookState } from "./hooks.js";
 import type { CheckpointStore } from "./store.js";
+import type { CheckpointMeta } from "./types.js";
 import { TIMELINE_HTML } from "./timeline-html.js";
+
+/** Unified timeline event for the timeline viewer API. */
+type TimelineEvent = {
+  type: "user_message" | "assistant_reply" | "tool_call" | "tool_result" | "checkpoint" | "session_start" | "compaction";
+  timestamp: string;
+  content: string;
+  toolName?: string;
+  isError?: boolean;
+  checkpointId?: string;
+  checkpoint?: CheckpointMeta;
+};
 
 export type TimelineServerParams = {
   engine: CheckpointEngine;
@@ -70,6 +83,19 @@ export async function startTimelineServer(params: TimelineServerParams): Promise
           }),
         );
         jsonResponse(res, enriched);
+        return;
+      }
+
+      const timelineMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/(.+)\/timeline$/);
+      if (timelineMatch) {
+        const agentId = timelineMatch[1]!;
+        const sessionId = decodeURIComponent(timelineMatch[2]!);
+        const [transcriptEvents, checkpoints] = await Promise.all([
+          readSessionTranscript(agentId, sessionId),
+          store.listCheckpoints(agentId, sessionId),
+        ]);
+        const timeline = buildTimeline(transcriptEvents, checkpoints);
+        jsonResponse(res, { events: timeline });
         return;
       }
 
@@ -146,6 +172,124 @@ export async function startTimelineServer(params: TimelineServerParams): Promise
       });
     });
   });
+}
+
+const MAX_CONTENT_PREVIEW = 200;
+
+function truncate(s: string, max = MAX_CONTENT_PREVIEW): string {
+  return s.length > max ? s.slice(0, max) + "..." : s;
+}
+
+/** Extract text from a JSONL message content block array. */
+function extractText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((b: any) => b?.type === "text" && typeof b.text === "string")
+    .map((b: any) => b.text)
+    .join("\n");
+}
+
+/** Extract tool call names from a JSONL message content block array. */
+function extractToolCalls(content: unknown): Array<{ name: string; id?: string }> {
+  if (!Array.isArray(content)) return [];
+  return content
+    .filter((b: any) => (b?.type === "toolCall" || b?.type === "toolUse") && typeof b.name === "string")
+    .map((b: any) => ({ name: b.name, id: b.id }));
+}
+
+/**
+ * Read a session JSONL transcript and extract timeline events.
+ * Path: ~/.openclaw/agents/{agentId}/sessions/{sessionId}.jsonl
+ */
+async function readSessionTranscript(agentId: string, sessionId: string): Promise<TimelineEvent[]> {
+  const sessionsDir = path.join(os.homedir(), ".openclaw", "agents", agentId, "sessions");
+  const transcriptPath = path.join(sessionsDir, `${sessionId}.jsonl`);
+
+  let raw: string;
+  try {
+    raw = await fs.readFile(transcriptPath, "utf8");
+  } catch {
+    return []; // Transcript not found — session may use a different path or not exist
+  }
+
+  const events: TimelineEvent[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    let entry: any;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    if (entry.type === "session" && entry.timestamp) {
+      events.push({ type: "session_start", timestamp: entry.timestamp, content: "Session started" });
+      continue;
+    }
+
+    if (entry.type === "compaction" && entry.timestamp) {
+      events.push({
+        type: "compaction",
+        timestamp: entry.timestamp,
+        content: entry.summary ? truncate(entry.summary) : "Context compacted",
+      });
+      continue;
+    }
+
+    if (entry.type !== "message" || !entry.message) continue;
+
+    const msg = entry.message;
+    const ts = entry.timestamp ?? (msg.timestamp ? new Date(msg.timestamp).toISOString() : "");
+    if (!ts) continue;
+
+    if (msg.role === "user") {
+      const text = extractText(msg.content);
+      if (text) {
+        events.push({ type: "user_message", timestamp: ts, content: truncate(text) });
+      }
+    } else if (msg.role === "assistant") {
+      const text = extractText(msg.content);
+      const tools = extractToolCalls(msg.content);
+
+      if (text) {
+        events.push({ type: "assistant_reply", timestamp: ts, content: truncate(text) });
+      }
+      for (const tool of tools) {
+        events.push({ type: "tool_call", timestamp: ts, content: tool.name, toolName: tool.name });
+      }
+    } else if (msg.role === "toolResult") {
+      const text = typeof msg.content === "string" ? msg.content : extractText(msg.content);
+      events.push({
+        type: "tool_result",
+        timestamp: ts,
+        content: truncate(text || "(no output)"),
+        toolName: msg.toolName,
+        isError: msg.isError === true,
+      });
+    }
+  }
+  return events;
+}
+
+/** Merge session transcript events with checkpoint data into a unified timeline. */
+function buildTimeline(transcriptEvents: TimelineEvent[], checkpoints: CheckpointMeta[]): TimelineEvent[] {
+  const cpEvents: TimelineEvent[] = checkpoints.map((cp) => ({
+    type: "checkpoint" as const,
+    timestamp: cp.createdAt,
+    content: cp.trigger.toolName
+      ? `Checkpoint before ${cp.trigger.toolName}`
+      : cp.trigger.type === "session_start"
+        ? "Session start checkpoint"
+        : "Manual checkpoint",
+    toolName: cp.trigger.toolName,
+    checkpointId: cp.id,
+    checkpoint: cp,
+  }));
+
+  const all = [...transcriptEvents, ...cpEvents];
+  all.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  return all;
 }
 
 function jsonResponse(res: http.ServerResponse, data: unknown): void {

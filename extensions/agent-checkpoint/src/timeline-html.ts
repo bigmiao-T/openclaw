@@ -119,37 +119,36 @@ export const TIMELINE_HTML = /* html */ `<!DOCTYPE html>
     top: 10px;
   }
 
-  /* Tool action node (the execution that follows a checkpoint) */
-  .timeline-action {
-    position: relative;
-    padding: 2px 16px 16px 24px;
-    margin: 0 8px;
+  /* Conversation event nodes */
+  .timeline-item.user .timeline-node { background: var(--accent); }
+  .timeline-item.assistant .timeline-node { background: var(--green); }
+  .timeline-item.tool-call .timeline-node {
+    background: var(--border);
+    border-radius: 2px;
+    width: 10px; height: 10px;
+    left: -22px; top: 13px;
+  }
+  .timeline-item.tool-result .timeline-node {
+    background: var(--border);
+    width: 8px; height: 8px;
+    left: -21px; top: 14px;
+  }
+  .timeline-item.tool-result.error .timeline-node { background: var(--red); }
+  .timeline-item.compaction .timeline-node {
+    background: var(--text-muted);
+    width: 8px; height: 8px;
+    left: -21px; top: 14px;
+    border-radius: 2px;
+  }
+  .timeline-content-preview {
     font-size: 12px;
     color: var(--text-muted);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 340px;
   }
-  .timeline-action .timeline-node {
-    position: absolute;
-    left: -24px;
-    top: 6px;
-    width: 8px;
-    height: 8px;
-    border-radius: 2px;
-    background: var(--border);
-    border: 2px solid var(--bg);
-    z-index: 1;
-  }
-  .timeline-action.success .timeline-node { background: var(--green); }
-  .timeline-action.error .timeline-node { background: var(--red); }
-  .timeline-action-label {
-    font-weight: 500;
-    color: var(--text);
-  }
-  .timeline-action-result {
-    font-size: 11px;
-    margin-top: 1px;
-  }
-  .timeline-action-result.error { color: var(--red); }
-  .timeline-action-result.success { color: var(--green); }
 
   .timeline-time {
     font-size: 12px;
@@ -507,10 +506,12 @@ function renderSessionSelect() {
   }
 }
 
+let currentTimelineEvents = [];
+
 function selectSession(agentId, sessionId) {
   currentSession = allSessions.find(s => s.agentId === agentId && s.sessionId === sessionId) || null;
   sessionSelect.value = agentId + '/' + sessionId;
-  loadCheckpoints(agentId, sessionId);
+  loadTimeline(agentId, sessionId);
 }
 
 sessionSelect.addEventListener('change', () => {
@@ -521,124 +522,131 @@ sessionSelect.addEventListener('change', () => {
   selectSession(agentId, sessionId);
 });
 
-// ── Checkpoints ──
+// ── Timeline ──
 
-async function loadCheckpoints(agentId, sessionId) {
-  timelinePanel.innerHTML = '<div class="empty-state loading">Loading checkpoints...</div>';
+async function loadTimeline(agentId, sessionId) {
+  timelinePanel.innerHTML = '<div class="empty-state loading">Loading timeline...</div>';
   detailPanel.innerHTML = '<div class="empty-state">Select a checkpoint to view details</div>';
   activeCheckpointId = null;
 
   try {
-    const checkpoints = await fetchJSON('/api/sessions/' + agentId + '/' + sessionId + '/checkpoints');
+    const data = await fetchJSON('/api/sessions/' + agentId + '/' + sessionId + '/timeline');
+    const events = data.events || [];
 
-    // Also load child session checkpoints
-    const children = currentSession?.childSessions || [];
-    const childGroups = [];
-    for (const child of children) {
-      try {
-        const childCps = await fetchJSON('/api/sessions/' + child.agentId + '/' + encodeURIComponent(child.sessionId) + '/checkpoints');
-        if (childCps.length > 0) {
-          childGroups.push({ ref: child, checkpoints: childCps });
-        }
-      } catch { /* skip */ }
-    }
+    // Extract checkpoints for detail panel
+    currentCheckpoints = events.filter(e => e.type === 'checkpoint' && e.checkpoint).map(e => e.checkpoint);
+    currentTimelineEvents = events;
 
-    currentCheckpoints = [...checkpoints, ...childGroups.flatMap(g => g.checkpoints)];
-
-    if (checkpoints.length === 0 && childGroups.length === 0) {
-      timelinePanel.innerHTML = '<div class="empty-state">No checkpoints in this session</div>';
+    if (events.length === 0) {
+      timelinePanel.innerHTML = '<div class="empty-state">No events in this session</div>';
       return;
     }
 
-    renderTimeline(checkpoints, childGroups);
+    renderTimelineEvents(events);
   } catch (e) {
     timelinePanel.innerHTML = '<div class="empty-state">Error: ' + e.message + '</div>';
   }
 }
 
-function renderTimeline(checkpoints, childGroups) {
+function renderTimelineEvents(events) {
   // Show newest first
-  const sorted = [...checkpoints].reverse();
+  const sorted = [...events].reverse();
 
   let html = '<div class="timeline">';
-  for (const cp of sorted) {
-    html += renderTimelineItem(cp, false);
+  for (const ev of sorted) {
+    html += renderEventItem(ev);
   }
-
-  // Render child session groups
-  for (const group of (childGroups || [])) {
-    const label = group.ref.sessionId.length > 20
-      ? group.ref.sessionId.slice(0, 18) + '..'
-      : group.ref.sessionId;
-    html += '<div class="child-session-header" data-agent="' + escapeHtml(group.ref.agentId)
-      + '" data-session="' + escapeHtml(group.ref.sessionId)
-      + '">&#9662; Child: ' + escapeHtml(group.ref.agentId) + ' / ' + escapeHtml(label)
-      + ' (' + group.checkpoints.length + ')</div>';
-    const childSorted = [...group.checkpoints].reverse();
-    for (const cp of childSorted) {
-      html += renderTimelineItem(cp, true);
-    }
-  }
-
   html += '</div>';
   timelinePanel.innerHTML = html;
 
-  // Click handlers
-  timelinePanel.querySelectorAll('.timeline-item').forEach(el => {
+  // Click handlers — only checkpoint items are clickable
+  timelinePanel.querySelectorAll('.timeline-item[data-id]').forEach(el => {
     el.addEventListener('click', () => selectCheckpoint(el.dataset.id));
-  });
-  timelinePanel.querySelectorAll('.child-session-header').forEach(el => {
-    el.addEventListener('click', () => {
-      selectSession(el.dataset.agent, el.dataset.session);
-    });
   });
 }
 
-function renderTimelineItem(cp, isChild) {
-  const isError = cp.toolResult?.success === false;
-  const isManual = cp.trigger.type === 'manual';
-  const isSession = cp.trigger.type === 'session_start';
-  const isBeforeTool = cp.trigger.type === 'before_tool_call';
+function renderEventItem(ev) {
+  const time = formatTime(ev.timestamp);
 
-  let cls = 'timeline-item';
-  if (isChild) cls += ' child-session';
-  if (isManual) cls += ' manual';
-  else if (isSession) cls += ' session-start';
+  if (ev.type === 'checkpoint') {
+    const cp = ev.checkpoint;
+    const isManual = cp?.trigger?.type === 'manual';
+    const isSession = cp?.trigger?.type === 'session_start';
+    let cls = 'timeline-item';
+    if (isManual) cls += ' manual';
+    else if (isSession) cls += ' session-start';
 
-  const time = formatTime(cp.createdAt);
-  const title = getTriggerLabel(cp);
-  const filesCount = cp.snapshot.filesChanged.length;
-
-  // Checkpoint dot — the saved state
-  let html = '<div class="' + cls + '" data-id="' + cp.id + '">';
-  html += '<div class="timeline-node"></div>';
-  html += '<div class="timeline-time">' + time + '</div>';
-  html += '<div class="timeline-title">' + title + '</div>';
-  html += '<div class="timeline-meta">';
-  html += '<span>' + filesCount + ' file' + (filesCount !== 1 ? 's' : '') + '</span>';
-  if (isManual) html += '<span class="badge badge-manual">manual</span>';
-  if (isSession) html += '<span class="badge badge-session">session start</span>';
-  if (isChild) html += '<span class="badge badge-child">child</span>';
-  html += '</div></div>';
-
-  // Tool action dot — the operation that follows (only for before_tool_call or after_tool_call triggers)
-  if ((isBeforeTool || cp.trigger.type === 'after_tool_call') && cp.trigger.toolName) {
-    const actionCls = 'timeline-action' + (isError ? ' error' : ' success');
-    const duration = cp.toolDurationMs != null ? ' (' + formatDuration(cp.toolDurationMs) + ')' : '';
-    html += '<div class="' + actionCls + '">';
+    let html = '<div class="' + cls + '" data-id="' + escapeAttr(ev.checkpointId) + '">';
     html += '<div class="timeline-node"></div>';
-    html += '<span class="timeline-action-label">' + escapeHtml(cp.trigger.toolName) + '</span>';
-    html += '<span class="badge badge-tool" style="margin-left:6px">' + (isBeforeTool ? 'execute' : 'after') + '</span>';
-    if (duration) html += '<span style="margin-left:6px;font-size:11px;color:var(--text-muted)">' + duration + '</span>';
-    if (isError && cp.toolResult?.errorMessage) {
-      html += '<div class="timeline-action-result error">' + escapeHtml(cp.toolResult.errorMessage) + '</div>';
-    } else if (cp.toolResult?.success) {
-      html += '<div class="timeline-action-result success">success</div>';
-    }
-    html += '</div>';
+    html += '<div class="timeline-time">' + time + '</div>';
+    html += '<div class="timeline-title">' + escapeHtml(ev.content) + '</div>';
+    html += '<div class="timeline-meta">';
+    if (cp) html += '<span>' + cp.snapshot.filesChanged.length + ' files</span>';
+    html += '<span class="badge badge-manual">checkpoint</span>';
+    if (ev.toolName) html += '<span class="badge badge-tool">' + escapeHtml(ev.toolName) + '</span>';
+    html += '</div></div>';
+    return html;
   }
 
-  return html;
+  if (ev.type === 'user_message') {
+    let html = '<div class="timeline-item user">';
+    html += '<div class="timeline-node"></div>';
+    html += '<div class="timeline-time">' + time + '</div>';
+    html += '<div class="timeline-title">User</div>';
+    html += '<div class="timeline-content-preview">' + escapeHtml(ev.content) + '</div>';
+    html += '</div>';
+    return html;
+  }
+
+  if (ev.type === 'assistant_reply') {
+    let html = '<div class="timeline-item assistant">';
+    html += '<div class="timeline-node"></div>';
+    html += '<div class="timeline-time">' + time + '</div>';
+    html += '<div class="timeline-title">Assistant</div>';
+    html += '<div class="timeline-content-preview">' + escapeHtml(ev.content) + '</div>';
+    html += '</div>';
+    return html;
+  }
+
+  if (ev.type === 'tool_call') {
+    let html = '<div class="timeline-item tool-call">';
+    html += '<div class="timeline-node"></div>';
+    html += '<div class="timeline-time">' + time + '</div>';
+    html += '<div class="timeline-title">Tool: ' + escapeHtml(ev.toolName || ev.content) + '</div>';
+    html += '</div>';
+    return html;
+  }
+
+  if (ev.type === 'tool_result') {
+    let html = '<div class="timeline-item tool-result' + (ev.isError ? ' error' : '') + '">';
+    html += '<div class="timeline-node"></div>';
+    html += '<div class="timeline-time">' + time + '</div>';
+    html += '<div class="timeline-title">' + (ev.toolName ? ev.toolName + ' ' : '') + 'Result</div>';
+    html += '<div class="timeline-content-preview' + (ev.isError ? ' error' : '') + '">' + escapeHtml(ev.content) + '</div>';
+    html += '</div>';
+    return html;
+  }
+
+  if (ev.type === 'session_start') {
+    let html = '<div class="timeline-item session-start">';
+    html += '<div class="timeline-node"></div>';
+    html += '<div class="timeline-time">' + time + '</div>';
+    html += '<div class="timeline-title">Session Started</div>';
+    html += '</div>';
+    return html;
+  }
+
+  if (ev.type === 'compaction') {
+    let html = '<div class="timeline-item compaction">';
+    html += '<div class="timeline-node"></div>';
+    html += '<div class="timeline-time">' + time + '</div>';
+    html += '<div class="timeline-title">Context Compacted</div>';
+    html += '<div class="timeline-content-preview">' + escapeHtml(ev.content) + '</div>';
+    html += '</div>';
+    return html;
+  }
+
+  return '';
 }
 
 function selectCheckpoint(id) {
@@ -762,14 +770,6 @@ async function renderDetail(checkpointId) {
 }
 
 // ── Helpers ──
-
-function getTriggerLabel(cp) {
-  if (cp.trigger.type === 'session_start') return 'Session Start';
-  if (cp.trigger.type === 'manual') return cp.trigger.toolName || 'Manual Checkpoint';
-  if (cp.trigger.type === 'before_tool_call') return 'Checkpoint';
-  if (cp.trigger.type === 'after_tool_call' && cp.trigger.toolName) return 'After: ' + cp.trigger.toolName;
-  return cp.trigger.type;
-}
 
 function formatTime(iso) {
   const d = new Date(iso);
