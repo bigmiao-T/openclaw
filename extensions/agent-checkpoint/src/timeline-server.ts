@@ -10,13 +10,6 @@ export type TimelineServerParams = {
   engine: CheckpointEngine;
   store: CheckpointStore;
   hookState: CheckpointHookState;
-  runtime?: {
-    subagent: {
-      run: (params: { sessionKey: string; message: string; extraSystemPrompt?: string }) => Promise<{ runId: string }>;
-      waitForRun: (params: { runId: string; timeoutMs?: number }) => Promise<{ status: "ok" | "error" | "timeout"; error?: string }>;
-      getSessionMessages: (params: { sessionKey: string; limit?: number }) => Promise<{ messages: unknown[] }>;
-    };
-  };
   port?: number;
   hostname?: string;
 };
@@ -31,7 +24,7 @@ export type TimelineServer = {
  * plus a JSON API for checkpoint data.
  */
 export async function startTimelineServer(params: TimelineServerParams): Promise<TimelineServer> {
-  const { engine, store, hookState, runtime } = params;
+  const { engine, store, hookState } = params;
   const port = params.port ?? 0; // 0 = OS picks an available port
   const hostname = params.hostname ?? "127.0.0.1";
 
@@ -130,84 +123,6 @@ export async function startTimelineServer(params: TimelineServerParams): Promise
           triggerInfo,
           hint: "Conversation history is intact. Tell the agent what to do next.",
         });
-        return;
-      }
-
-      // POST /api/continue — restore checkpoint + start agent execution (SSE stream)
-      if (req.method === "POST" && pathname === "/api/continue") {
-        if (!runtime) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Agent runtime not available. Timeline was started outside of OpenClaw." }));
-          return;
-        }
-        const body = await readBody(req);
-        const { agentId, sessionId, checkpointId, message } = JSON.parse(body);
-        if (!agentId || !sessionId || !checkpointId) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Missing agentId, sessionId, or checkpointId" }));
-          return;
-        }
-
-        // SSE response
-        res.writeHead(200, {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          "Connection": "keep-alive",
-        });
-        const sendSSE = (event: string, data: unknown) => {
-          res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-        };
-
-        try {
-          // Step 1: Restore
-          sendSSE("status", { phase: "restoring", message: "Restoring workspace to checkpoint..." });
-          const restoreResult = await engine.restoreCheckpoint({
-            agentId, sessionId, checkpointId,
-            workspaceDir: getWorkspaceDir(),
-            scope: "all",
-          });
-          sendSSE("status", {
-            phase: "restored",
-            message: `Restored to ${restoreResult.restoredCheckpoint.id}`,
-            filesRestored: restoreResult.filesRestored,
-          });
-
-          // Step 2: Start agent
-          const sessionKey = `agent:${agentId}:checkpoint-continue:${sessionId}`;
-          const prompt = message || "Continue the task from where it left off. The workspace has been restored to a previous checkpoint.";
-          sendSSE("status", { phase: "starting", message: "Starting agent execution..." });
-          const { runId } = await runtime.subagent.run({
-            sessionKey,
-            message: prompt,
-            extraSystemPrompt: `You are resuming a task from checkpoint ${checkpointId}. The workspace files have been restored to that point. Continue where the previous agent left off.`,
-          });
-          sendSSE("status", { phase: "running", message: "Agent is running...", runId });
-
-          // Step 3: Wait for completion
-          const result = await runtime.subagent.waitForRun({ runId, timeoutMs: 300_000 });
-          if (result.status === "ok") {
-            // Fetch final messages
-            const msgs = await runtime.subagent.getSessionMessages({ sessionKey, limit: 5 });
-            const lastAssistant = (msgs.messages as Array<{ role: string; content?: string }>)
-              .filter(m => m.role === "assistant")
-              .pop();
-            sendSSE("status", {
-              phase: "done",
-              message: "Agent completed successfully.",
-              result: lastAssistant?.content ?? "(no output)",
-            });
-          } else {
-            sendSSE("status", {
-              phase: "error",
-              message: result.status === "timeout" ? "Agent execution timed out (5min)." : `Agent failed: ${result.error ?? "unknown error"}`,
-            });
-          }
-        } catch (e) {
-          sendSSE("status", { phase: "error", message: `Error: ${String(e)}` });
-        } finally {
-          sendSSE("done", {});
-          res.end();
-        }
         return;
       }
 
