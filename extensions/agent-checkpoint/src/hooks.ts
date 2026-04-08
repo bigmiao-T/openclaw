@@ -3,25 +3,46 @@ import type { CheckpointEngine } from "./engine.js";
 import type { SessionRef } from "./types.js";
 
 /**
- * Workspace directory cache.
- * Keyed by agentId so each agent (including sub-agents) resolves its own workspace.
+ * Encapsulates mutable hook state (workspace dirs, session key index)
+ * so it is testable and not hidden in module-level globals.
  */
-const workspaceDirs = new Map<string, string>();
+export class CheckpointHookState {
+  /** Workspace directory per agentId. */
+  private readonly workspaceDirs = new Map<string, string>();
+  /** Maps sessionKey → SessionRef for parent/child resolution. */
+  private readonly sessionKeyIndex = new Map<string, SessionRef>();
 
-/**
- * Maps sessionKey → { agentId, sessionId } for resolving parent/child relationships.
- * Populated from session_start and before_agent_start hooks.
- */
-const sessionKeyIndex = new Map<string, SessionRef>();
+  cacheWorkspaceDir(ctx: OpenClawPluginToolContext): void {
+    if (ctx.agentId && ctx.workspaceDir) {
+      this.workspaceDirs.set(ctx.agentId, ctx.workspaceDir);
+    }
+  }
 
-export function cacheWorkspaceDir(ctx: OpenClawPluginToolContext): void {
-  if (ctx.agentId && ctx.workspaceDir) {
-    workspaceDirs.set(ctx.agentId, ctx.workspaceDir);
+  getCachedWorkspaceDir(agentId: string): string | undefined {
+    return this.workspaceDirs.get(agentId);
+  }
+
+  indexSession(agentId: string, sessionId: string, sessionKey: string): void {
+    this.sessionKeyIndex.set(sessionKey, { agentId, sessionId, sessionKey });
+  }
+
+  getSessionRef(sessionKey: string): SessionRef | undefined {
+    return this.sessionKeyIndex.get(sessionKey);
   }
 }
 
-export function getCachedWorkspaceDir(agentId: string): string | undefined {
-  return workspaceDirs.get(agentId);
+type CheckpointContext = { agentId: string; sessionId: string; workspaceDir: string };
+
+/** Extract and validate the checkpoint-relevant fields from a hook context. */
+function resolveCheckpointContext(
+  context: { agentId?: string; sessionId?: string },
+  state: CheckpointHookState,
+): CheckpointContext | null {
+  const { agentId, sessionId } = context;
+  if (!agentId || !sessionId) return null;
+  const workspaceDir = state.getCachedWorkspaceDir(agentId);
+  if (!workspaceDir) return null;
+  return { agentId, sessionId, workspaceDir };
 }
 
 /**
@@ -34,19 +55,16 @@ export function getCachedWorkspaceDir(agentId: string): string | undefined {
 export function registerCheckpointHooks(
   api: OpenClawPluginApi,
   engine: CheckpointEngine,
+  state: CheckpointHookState,
 ): void {
   // Cache workspaceDir from agent context — fires before session_start,
   // so sub-agents have their workspaceDir ready for the baseline checkpoint.
   api.on("before_agent_start", (_event, context) => {
     if (context.agentId && context.workspaceDir) {
-      workspaceDirs.set(context.agentId, context.workspaceDir);
+      state.cacheWorkspaceDir(context as OpenClawPluginToolContext);
     }
     if (context.agentId && context.sessionId && context.sessionKey) {
-      sessionKeyIndex.set(context.sessionKey, {
-        agentId: context.agentId,
-        sessionId: context.sessionId,
-        sessionKey: context.sessionKey,
-      });
+      state.indexSession(context.agentId, context.sessionId, context.sessionKey);
     }
   });
 
@@ -54,49 +72,41 @@ export function registerCheckpointHooks(
     const toolName = event.toolName ?? "";
     if (!engine.shouldCreateCheckpoint(toolName)) return;
 
-    const agentId = context.agentId;
-    const sessionId = context.sessionId;
-    const runId = context.runId ?? "";
-    const workspaceDir = agentId ? getCachedWorkspaceDir(agentId) : undefined;
-
-    if (!agentId || !sessionId || !workspaceDir) return;
+    const ctx = resolveCheckpointContext(context, state);
+    if (!ctx) return;
 
     try {
       await engine.createCheckpoint({
-        agentId,
-        sessionId,
-        runId,
-        workspaceDir,
+        agentId: ctx.agentId,
+        sessionId: ctx.sessionId,
+        runId: (context as any).runId ?? "",
+        workspaceDir: ctx.workspaceDir,
         trigger: {
           type: "after_tool_call",
           toolName,
-          toolCallId: context.toolCallId,
+          toolCallId: (context as any).toolCallId,
         },
         toolDurationMs: event.durationMs,
         toolResult: event.error
           ? { success: false, errorMessage: String(event.error) }
           : { success: true },
       });
+      await engine.pruneExcess(ctx.agentId, ctx.sessionId);
     } catch (error) {
       api.logger?.warn(`Checkpoint failed after ${toolName}: ${String(error)}`);
     }
   });
 
   api.on("session_start", async (_event, context) => {
-    const agentId = context.agentId;
-    const sessionId = context.sessionId;
+    const { agentId, sessionId } = context;
     if (!agentId || !sessionId) return;
 
     // Index this session key for parent/child resolution
     if (context.sessionKey) {
-      sessionKeyIndex.set(context.sessionKey, {
-        agentId,
-        sessionId,
-        sessionKey: context.sessionKey,
-      });
+      state.indexSession(agentId, sessionId, context.sessionKey);
     }
 
-    const workspaceDir = getCachedWorkspaceDir(agentId);
+    const workspaceDir = state.getCachedWorkspaceDir(agentId);
     if (!workspaceDir) return;
 
     try {
@@ -118,9 +128,9 @@ export function registerCheckpointHooks(
     const parentSessionKey = context.requesterSessionKey;
     if (!childSessionKey || !parentSessionKey) return;
 
-    const childRef = sessionKeyIndex.get(childSessionKey)
+    const childRef = state.getSessionRef(childSessionKey)
       ?? parseSessionKey(childSessionKey, event.agentId);
-    const parentRef = sessionKeyIndex.get(parentSessionKey);
+    const parentRef = state.getSessionRef(parentSessionKey);
 
     if (!parentRef || !childRef) return;
 
@@ -142,9 +152,6 @@ function parseSessionKey(sessionKey: string, fallbackAgentId?: string): SessionR
   if (parts.length < 3 || parts[0] !== "agent") return undefined;
 
   const agentId = parts[1]!;
-  // The session ID portion is everything after agent:<agentId>:
-  // For subagent keys like "agent:main:subagent:uuid", the sessionId is the uuid
-  // But we may not have it indexed yet. Use the full key suffix as sessionId fallback.
   const sessionId = parts.slice(2).join(":");
 
   return { agentId: fallbackAgentId ?? agentId, sessionId, sessionKey };

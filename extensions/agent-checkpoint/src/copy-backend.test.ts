@@ -52,7 +52,7 @@ describe("CopyBackend", () => {
         checkpointId: "cp-001",
       });
 
-      expect(result.snapshotRef).toBe("cp-001");
+      expect(result.snapshotRef).toBe("copy:cp-001");
       expect(result.filesChanged).toContain("hello.txt");
       expect(result.filesChanged).toContain("src/main.ts");
       expect(result.changeSummary).toContain("initial");

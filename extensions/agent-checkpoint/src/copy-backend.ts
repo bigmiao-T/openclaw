@@ -65,7 +65,7 @@ export class CopyBackend implements SnapshotBackend {
       ? `${filesChanged.length} file(s) changed`
       : `${filesChanged.length} file(s) (initial)`;
 
-    return { snapshotRef: checkpointId, filesChanged, changeSummary };
+    return { snapshotRef: `copy:${checkpointId}`, filesChanged, changeSummary };
   }
 
   async restoreSnapshot(params: {
@@ -114,10 +114,15 @@ export class CopyBackend implements SnapshotBackend {
     await fs.rm(dir, { recursive: true, force: true });
   }
 
+  getSnapshotDir(snapshotRef: string): string {
+    return this.snapshotPath(snapshotRef);
+  }
+
   // ── Internal ────────────────────────────────────────────────────────────
 
-  private snapshotPath(checkpointId: string): string {
-    return path.join(this.storageDir, "snapshots", checkpointId);
+  private snapshotPath(ref: string): string {
+    const id = ref.startsWith("copy:") ? ref.slice(5) : ref;
+    return path.join(this.storageDir, "snapshots", id);
   }
 
   private createFilter(sourceRoot: string): (src: string) => boolean {
