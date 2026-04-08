@@ -2,7 +2,7 @@ import path from "node:path";
 import os from "node:os";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 import type { CheckpointEngine } from "./engine.js";
-import { getCachedWorkspaceDir } from "./hooks.js";
+import type { CheckpointHookState } from "./hooks.js";
 import { startTimelineServer, type TimelineServer, type TimelineServerParams } from "./timeline-server.js";
 
 /**
@@ -18,6 +18,7 @@ import { startTimelineServer, type TimelineServer, type TimelineServerParams } f
 export function registerCheckpointCommand(
   api: OpenClawPluginApi,
   engine: CheckpointEngine,
+  hookState: CheckpointHookState,
 ): void {
   let activeServer: TimelineServer | null = null;
 
@@ -32,7 +33,7 @@ export function registerCheckpointCommand(
       // Resolve workspaceDir: cached (from hooks) → config → default
       const defaultAgentId = "main";
       const workspaceDir =
-        getCachedWorkspaceDir(defaultAgentId)
+        hookState.getCachedWorkspaceDir(defaultAgentId)
         ?? (ctx.config as any)?.agents?.defaults?.workspace
         ?? path.join(os.homedir(), ".openclaw", "workspace");
 
@@ -86,26 +87,10 @@ export function registerCheckpointCommand(
 
         case "restore": {
           const checkpointId = parts[1];
-          if (!checkpointId) return { text: "Usage: /checkpoint restore <checkpointId> [files|transcript|all]\nCheckpoint ID contains agentId and sessionId info." };
+          if (!checkpointId) return { text: "Usage: /checkpoint restore <checkpointId> [files|transcript|all]" };
 
-          // Parse agentId and sessionId from checkpoint ID format: {agent}-{session}-{seq}-{trigger}
-          const idParts = checkpointId.split("-");
-          if (idParts.length < 4) return { text: "Invalid checkpoint ID format." };
-          const agentId = idParts[0]!;
-          const sessionId = idParts[1]!;
-
-          // Try to find the checkpoint across all sessions if short sessionId doesn't match
-          const sessions = await engine.store.listSessions();
-          let resolvedAgentId = agentId;
-          let resolvedSessionId = sessionId;
-          for (const s of sessions) {
-            const cps = await engine.store.listCheckpoints(s.agentId, s.sessionId);
-            if (cps.some((cp) => cp.id === checkpointId)) {
-              resolvedAgentId = s.agentId;
-              resolvedSessionId = s.sessionId;
-              break;
-            }
-          }
+          const found = await engine.store.findCheckpoint(checkpointId);
+          if (!found) return { text: `Checkpoint not found: \`${checkpointId}\`` };
 
           const scopeArg = parts[2] as "files" | "transcript" | "all" | undefined;
           const scope = ["files", "transcript", "all"].includes(scopeArg ?? "")
@@ -113,7 +98,7 @@ export function registerCheckpointCommand(
             : undefined;
 
           const result = await engine.restoreCheckpoint({
-            agentId: resolvedAgentId, sessionId: resolvedSessionId, checkpointId, workspaceDir, scope,
+            agentId: found.agentId, sessionId: found.sessionId, checkpointId, workspaceDir, scope,
           });
           return { text: `Restored to \`${result.restoredCheckpoint.id}\` (scope: ${result.scope})` };
         }
@@ -126,6 +111,7 @@ export function registerCheckpointCommand(
           const timelineParams: TimelineServerParams = {
             engine,
             store: engine.store,
+            hookState,
             port: Number.isFinite(port) ? port : 0,
             runtime: (api as any).runtime ?? undefined,
           };

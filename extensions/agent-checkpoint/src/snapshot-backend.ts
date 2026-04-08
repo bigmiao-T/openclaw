@@ -50,6 +50,12 @@ export interface SnapshotBackend {
    */
   deleteSnapshot(snapshotRef: string): Promise<void>;
 
+  /**
+   * Return the filesystem directory where a snapshot's data is stored.
+   * Used by engine for co-located data (e.g. task flow DB backups).
+   */
+  getSnapshotDir(snapshotRef: string): string;
+
   init?(): Promise<void>;
   dispose?(): Promise<void>;
 }

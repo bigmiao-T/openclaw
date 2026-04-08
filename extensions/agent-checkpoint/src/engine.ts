@@ -126,10 +126,6 @@ export class CheckpointEngine {
     // Backup task flow SQLite alongside the snapshot
     await this.backupTaskFlowDb(snapshot.snapshotRef);
 
-    await this.store.pruneExcessWithBackend(
-      agentId, sessionId, this.config.maxCheckpointsPerSession, this.backend,
-    );
-
     const toolDesc = trigger.toolName ? ` after ${trigger.toolName}` : "";
     this.logger?.info(
       `Checkpoint ${checkpointId} created${toolDesc} (${snapshot.filesChanged.length} files changed)`,
@@ -247,21 +243,42 @@ export class CheckpointEngine {
   }
 
   async pruneOld(): Promise<number> {
-    return await this.store.pruneOldWithBackend(this.config.retentionDays, this.backend);
+    const cutoff = Date.now() - this.config.retentionDays * 24 * 60 * 60 * 1000;
+    let pruned = 0;
+
+    for (const { agentId, sessionId } of await this.store.listSessions()) {
+      for (const meta of await this.store.listCheckpoints(agentId, sessionId)) {
+        const createdAt = Date.parse(meta.createdAt);
+        if (Number.isFinite(createdAt) && createdAt < cutoff) {
+          await this.backend.deleteSnapshot(meta.snapshot.snapshotRef);
+          await this.store.deleteCheckpoint(agentId, sessionId, meta.id);
+          pruned++;
+        }
+      }
+    }
+    return pruned;
   }
 
-  private async getCurrentHead(agentId: string, sessionId: string): Promise<string | null> {
+  async pruneExcess(agentId: string, sessionId: string): Promise<number> {
     const manifest = await this.store.getManifest(agentId, sessionId);
-    return manifest?.currentHead ?? null;
-  }
+    if (!manifest || manifest.checkpoints.length <= this.config.maxCheckpointsPerSession) return 0;
 
-  private snapshotDir(snapshotRef: string): string {
-    return path.join(this.config.storagePath, "snapshots", snapshotRef);
+    const excess = manifest.checkpoints.length - this.config.maxCheckpointsPerSession;
+    const toRemove = manifest.checkpoints.slice(0, excess);
+    let pruned = 0;
+
+    for (const id of toRemove) {
+      const meta = await this.store.getCheckpoint(agentId, sessionId, id);
+      if (meta) await this.backend.deleteSnapshot(meta.snapshot.snapshotRef);
+      await this.store.deleteCheckpoint(agentId, sessionId, id);
+      pruned++;
+    }
+    return pruned;
   }
 
   private async backupTaskFlowDb(snapshotRef: string): Promise<void> {
     if (!this.taskFlowDbPath) return;
-    const dir = this.snapshotDir(snapshotRef);
+    const dir = this.backend.getSnapshotDir(snapshotRef);
     for (const suffix of TASKFLOW_DB_SUFFIXES) {
       const src = this.taskFlowDbPath + suffix;
       const dst = path.join(dir, TASKFLOW_DB_BACKUP_NAME + suffix);
@@ -275,7 +292,7 @@ export class CheckpointEngine {
 
   private async restoreTaskFlowDb(snapshotRef: string): Promise<void> {
     if (!this.taskFlowDbPath) return;
-    const dir = this.snapshotDir(snapshotRef);
+    const dir = this.backend.getSnapshotDir(snapshotRef);
     for (const suffix of TASKFLOW_DB_SUFFIXES) {
       const src = path.join(dir, TASKFLOW_DB_BACKUP_NAME + suffix);
       const dst = this.taskFlowDbPath + suffix;

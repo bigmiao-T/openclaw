@@ -3,7 +3,7 @@ import { definePluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/p
 import { resolveConfig } from "./src/config.js";
 import { registerCheckpointCommand } from "./src/command.js";
 import { CheckpointEngine } from "./src/engine.js";
-import { cacheWorkspaceDir, registerCheckpointHooks } from "./src/hooks.js";
+import { CheckpointHookState, registerCheckpointHooks } from "./src/hooks.js";
 import { createPruningService } from "./src/pruning-service.js";
 import { createSnapshotBackend, type BackendType } from "./src/snapshot-backend.js";
 import { CheckpointStore } from "./src/store.js";
@@ -40,20 +40,22 @@ export default definePluginEntry({
       taskFlowDbPath,
     });
 
+    const hookState = new CheckpointHookState();
+
     // Auto-checkpoint hooks
-    registerCheckpointHooks(api, engine);
+    registerCheckpointHooks(api, engine, hookState);
 
     // Agent tool (also caches workspaceDir for hooks)
     api.registerTool(
       (ctx) => {
-        cacheWorkspaceDir(ctx);
+        hookState.cacheWorkspaceDir(ctx);
         return createCheckpointTool({ engine, context: ctx });
       },
       { name: "checkpoint" },
     );
 
     // /checkpoint slash command
-    registerCheckpointCommand(api, engine);
+    registerCheckpointCommand(api, engine, hookState);
 
     // Background pruning service
     api.registerService(createPruningService(engine));

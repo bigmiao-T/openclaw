@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CopyBackend } from "./copy-backend.js";
 import { CheckpointEngine } from "./engine.js";
 import { CheckpointStore } from "./store.js";
+import { CheckpointHookState } from "./hooks.js";
 import { startTimelineServer, type TimelineServer } from "./timeline-server.js";
 import type { CheckpointPluginConfig } from "./types.js";
 
@@ -37,7 +38,7 @@ describe("TimelineServer", () => {
     const backend = new CopyBackend({ storageDir: storagePath });
     engine = new CheckpointEngine({ store, backend, config });
 
-    server = await startTimelineServer({ engine, store, port: 0 });
+    server = await startTimelineServer({ engine, store, hookState: new CheckpointHookState(), port: 0 });
   });
 
   afterEach(async () => {

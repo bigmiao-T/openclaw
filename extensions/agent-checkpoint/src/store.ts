@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { PluginLogger } from "openclaw/plugin-sdk";
-import type { SnapshotBackend } from "./snapshot-backend.js";
 import type { CheckpointId, CheckpointManifest, CheckpointMeta } from "./types.js";
 
 /**
@@ -152,45 +151,18 @@ export class CheckpointStore {
     return results;
   }
 
-  // ── Pruning (coordinated with backend) ──────────────────────────────────
-
-  async pruneOldWithBackend(retentionDays: number, backend: SnapshotBackend): Promise<number> {
-    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
-    let pruned = 0;
-
+  /**
+   * Search across all sessions for a checkpoint by ID.
+   * Returns the resolved agentId, sessionId, and metadata, or null if not found.
+   */
+  async findCheckpoint(
+    checkpointId: string,
+  ): Promise<{ agentId: string; sessionId: string; meta: CheckpointMeta } | null> {
     for (const { agentId, sessionId } of await this.listSessions()) {
-      for (const meta of await this.listCheckpoints(agentId, sessionId)) {
-        const createdAt = Date.parse(meta.createdAt);
-        if (Number.isFinite(createdAt) && createdAt < cutoff) {
-          await backend.deleteSnapshot(meta.snapshot.snapshotRef);
-          await this.deleteCheckpoint(agentId, sessionId, meta.id);
-          pruned++;
-        }
-      }
+      const meta = await this.getCheckpoint(agentId, sessionId, checkpointId);
+      if (meta) return { agentId, sessionId, meta };
     }
-    return pruned;
-  }
-
-  async pruneExcessWithBackend(
-    agentId: string,
-    sessionId: string,
-    maxCheckpoints: number,
-    backend: SnapshotBackend,
-  ): Promise<number> {
-    const manifest = await this.getManifest(agentId, sessionId);
-    if (!manifest || manifest.checkpoints.length <= maxCheckpoints) return 0;
-
-    const excess = manifest.checkpoints.length - maxCheckpoints;
-    const toRemove = manifest.checkpoints.slice(0, excess);
-    let pruned = 0;
-
-    for (const id of toRemove) {
-      const meta = await this.getCheckpoint(agentId, sessionId, id);
-      if (meta) await backend.deleteSnapshot(meta.snapshot.snapshotRef);
-      await this.deleteCheckpoint(agentId, sessionId, id);
-      pruned++;
-    }
-    return pruned;
+    return null;
   }
 
   // ── Internal ────────────────────────────────────────────────────────────
