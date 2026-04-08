@@ -167,7 +167,6 @@ export function registerCheckpointCommand(
             store: engine.store,
             hookState,
             port: Number.isFinite(port) ? port : 0,
-            runtime: (api as any).runtime ?? undefined,
           };
           activeServer = await startTimelineServer(timelineParams);
           return { text: `Timeline viewer started at ${activeServer.url}` };

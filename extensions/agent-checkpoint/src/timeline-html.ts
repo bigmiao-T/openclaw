@@ -343,9 +343,6 @@ export const TIMELINE_HTML = /* html */ `<!DOCTYPE html>
   .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .action-btn.restore { border-color: var(--orange); color: var(--orange); }
   .action-btn.restore:hover { background: rgba(210,153,34,0.1); }
-  .action-btn.continue { border-color: var(--green); color: var(--green); }
-  .action-btn.continue:hover { background: rgba(63,185,80,0.1); }
-
   /* Toast notification */
   .toast {
     position: fixed;
@@ -401,96 +398,6 @@ export const TIMELINE_HTML = /* html */ `<!DOCTYPE html>
   }
   .modal-actions button.confirm:hover { opacity: 0.9; }
   .modal-actions button:hover { border-color: var(--accent); }
-
-  /* Execution progress panel */
-  .exec-panel {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    margin-bottom: 20px;
-    overflow: hidden;
-  }
-  .exec-header {
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 13px;
-    font-weight: 600;
-  }
-  .exec-header .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--text-muted);
-  }
-  .exec-header .dot.restoring { background: var(--orange); }
-  .exec-header .dot.running { background: var(--green); animation: pulse 1s infinite; }
-  .exec-header .dot.done { background: var(--green); }
-  .exec-header .dot.error { background: var(--red); }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-  .exec-log {
-    padding: 12px 16px;
-    font-family: monospace;
-    font-size: 12px;
-    max-height: 300px;
-    overflow-y: auto;
-    line-height: 1.8;
-  }
-  .exec-log .log-entry {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 2px 0;
-  }
-  .exec-log .log-time {
-    color: var(--text-muted);
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  .exec-log .log-msg { color: var(--text); }
-  .exec-log .log-msg.error { color: var(--red); }
-  .exec-log .log-msg.success { color: var(--green); }
-  .exec-result {
-    padding: 12px 16px;
-    border-top: 1px solid var(--border);
-    font-size: 13px;
-    white-space: pre-wrap;
-    max-height: 200px;
-    overflow-y: auto;
-    color: var(--text);
-  }
-  .exec-input {
-    padding: 10px 16px;
-    border-top: 1px solid var(--border);
-    display: flex;
-    gap: 8px;
-  }
-  .exec-input input {
-    flex: 1;
-    background: var(--bg);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 6px 12px;
-    font-size: 13px;
-    outline: none;
-  }
-  .exec-input input:focus { border-color: var(--accent); }
-  .exec-input input::placeholder { color: var(--text-muted); }
-  .exec-input button {
-    padding: 6px 16px;
-    border-radius: 6px;
-    border: 1px solid var(--green);
-    background: var(--green);
-    color: #fff;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-  }
-  .exec-input button:hover { opacity: 0.9; }
-  .exec-input button:disabled { opacity: 0.5; cursor: not-allowed; }
 
   @media (max-width: 768px) {
     .container { flex-direction: column; }
@@ -761,8 +668,6 @@ async function renderDetail(checkpointId) {
   html += '<div class="action-bar">';
   html += '<button class="action-btn restore" data-restore-id="' + escapeAttr(cp.id) + '" data-scope="files">';
   html += '&#x21A9; Restore Files</button>';
-  html += '<button class="action-btn continue" data-continue-id="' + escapeAttr(cp.id) + '">';
-  html += '&#x25B6; Restore &amp; Continue</button>';
   html += '</div>';
 
   // Session relations
@@ -841,13 +746,6 @@ async function renderDetail(checkpointId) {
       restoreToCheckpoint(restoreBtn.dataset.restoreId, restoreBtn.dataset.scope);
     });
   }
-  const continueBtn = detailPanel.querySelector('[data-continue-id]');
-  if (continueBtn) {
-    continueBtn.addEventListener('click', () => {
-      restoreAndContinue(continueBtn.dataset.continueId);
-    });
-  }
-
   // Load diff async
   try {
     const data = await fetchJSON(
@@ -977,154 +875,6 @@ async function restoreToCheckpoint(checkpointId, scope) {
       }
     }
   );
-}
-
-let activeExecAbort = null;
-
-function restoreAndContinue(checkpointId) {
-  const cp = currentCheckpoints.find(c => c.id === checkpointId);
-  if (!cp) return;
-  startExecution(cp, '');
-}
-
-function startExecution(cp, message) {
-  // Insert execution panel into detail panel (after action bar)
-  const actionBar = detailPanel.querySelector('.action-bar');
-  if (!actionBar) return;
-
-  // Disable buttons
-  detailPanel.querySelectorAll('.action-btn').forEach(b => b.disabled = true);
-
-  // Remove any existing exec panel
-  const old = detailPanel.querySelector('.exec-panel');
-  if (old) old.remove();
-
-  const panel = document.createElement('div');
-  panel.className = 'exec-panel';
-  panel.innerHTML =
-    '<div class="exec-header">' +
-    '<span class="dot restoring"></span>' +
-    '<span class="exec-status">Connecting...</span>' +
-    '</div>' +
-    '<div class="exec-log"></div>';
-  actionBar.after(panel);
-
-  const dot = panel.querySelector('.dot');
-  const statusEl = panel.querySelector('.exec-status');
-  const logEl = panel.querySelector('.exec-log');
-
-  function addLog(msg, cls) {
-    const now = new Date();
-    const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const entry = document.createElement('div');
-    entry.className = 'log-entry';
-    entry.innerHTML = '<span class="log-time">' + time + '</span><span class="log-msg' + (cls ? ' ' + cls : '') + '">' + escapeHtml(msg) + '</span>';
-    logEl.appendChild(entry);
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-
-  // Start SSE connection via POST (using fetch + ReadableStream since EventSource only does GET)
-  const controller = new AbortController();
-  activeExecAbort = controller;
-
-  fetch(API + '/api/continue', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      agentId: cp.agentId,
-      sessionId: cp.sessionId,
-      checkpointId: cp.id,
-      message: message,
-    }),
-    signal: controller.signal,
-  }).then(async (response) => {
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({ error: 'Request failed' }));
-      addLog(err.error || 'Request failed', 'error');
-      dot.className = 'dot error';
-      statusEl.textContent = 'Failed';
-      detailPanel.querySelectorAll('.action-btn').forEach(b => b.disabled = false);
-      return;
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      // Parse SSE events from buffer
-      const lines = buffer.split('\\n');
-      buffer = lines.pop() || '';
-
-      let eventType = null;
-      for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          eventType = line.slice(7).trim();
-        } else if (line.startsWith('data: ') && eventType) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            handleSSE(eventType, data, dot, statusEl, addLog, panel, cp);
-          } catch {}
-          eventType = null;
-        }
-      }
-    }
-  }).catch((e) => {
-    if (e.name !== 'AbortError') {
-      addLog('Connection error: ' + e.message, 'error');
-      dot.className = 'dot error';
-      statusEl.textContent = 'Connection failed';
-    }
-    detailPanel.querySelectorAll('.action-btn').forEach(b => b.disabled = false);
-  });
-}
-
-function handleSSE(event, data, dot, statusEl, addLog, panel, cp) {
-  if (event === 'status') {
-    const phase = data.phase;
-    addLog(data.message, phase === 'error' ? 'error' : phase === 'done' ? 'success' : '');
-
-    if (phase === 'restoring') {
-      dot.className = 'dot restoring';
-      statusEl.textContent = 'Restoring...';
-    } else if (phase === 'restored') {
-      dot.className = 'dot restoring';
-      statusEl.textContent = 'Restored';
-    } else if (phase === 'starting' || phase === 'running') {
-      dot.className = 'dot running';
-      statusEl.textContent = 'Agent running...';
-    } else if (phase === 'done') {
-      dot.className = 'dot done';
-      statusEl.textContent = 'Completed';
-      // Show result
-      if (data.result) {
-        const resultEl = document.createElement('div');
-        resultEl.className = 'exec-result';
-        resultEl.textContent = typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2);
-        panel.appendChild(resultEl);
-      }
-      detailPanel.querySelectorAll('.action-btn').forEach(b => b.disabled = false);
-      // Reload timeline
-      if (currentSession) {
-        loadCheckpoints(currentSession.agentId, currentSession.sessionId);
-      }
-    } else if (phase === 'error') {
-      dot.className = 'dot error';
-      statusEl.textContent = 'Failed';
-      detailPanel.querySelectorAll('.action-btn').forEach(b => b.disabled = false);
-    }
-  } else if (event === 'done') {
-    activeExecAbort = null;
-    if (dot.className === 'dot running') {
-      dot.className = 'dot done';
-      statusEl.textContent = 'Completed';
-      detailPanel.querySelectorAll('.action-btn').forEach(b => b.disabled = false);
-    }
-  }
 }
 
 // ── Init ──
