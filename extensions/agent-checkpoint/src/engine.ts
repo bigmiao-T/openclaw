@@ -242,6 +242,42 @@ export class CheckpointEngine {
     );
   }
 
+  async deleteCheckpoint(agentId: string, sessionId: string, checkpointId: string): Promise<void> {
+    const meta = await this.store.getCheckpoint(agentId, sessionId, checkpointId);
+    if (!meta) throw new Error(`Checkpoint not found: ${checkpointId}`);
+    await this.backend.deleteSnapshot(meta.snapshot.snapshotRef);
+    await this.store.deleteCheckpoint(agentId, sessionId, checkpointId);
+    this.logger?.info(`Deleted checkpoint ${checkpointId}`);
+  }
+
+  async deleteSession(agentId: string, sessionId: string): Promise<number> {
+    const checkpoints = await this.store.listCheckpoints(agentId, sessionId);
+    for (const meta of checkpoints) {
+      await this.backend.deleteSnapshot(meta.snapshot.snapshotRef);
+      await this.store.deleteCheckpoint(agentId, sessionId, meta.id);
+    }
+    this.logger?.info(`Deleted session ${agentId}/${sessionId} (${checkpoints.length} checkpoints)`);
+    return checkpoints.length;
+  }
+
+  async deleteBefore(cutoffDate: Date): Promise<number> {
+    const cutoff = cutoffDate.getTime();
+    let deleted = 0;
+
+    for (const { agentId, sessionId } of await this.store.listSessions()) {
+      for (const meta of await this.store.listCheckpoints(agentId, sessionId)) {
+        const createdAt = Date.parse(meta.createdAt);
+        if (Number.isFinite(createdAt) && createdAt < cutoff) {
+          await this.backend.deleteSnapshot(meta.snapshot.snapshotRef);
+          await this.store.deleteCheckpoint(agentId, sessionId, meta.id);
+          deleted++;
+        }
+      }
+    }
+    this.logger?.info(`Deleted ${deleted} checkpoints before ${cutoffDate.toISOString()}`);
+    return deleted;
+  }
+
   async pruneOld(): Promise<number> {
     const cutoff = Date.now() - this.config.retentionDays * 24 * 60 * 60 * 1000;
     let pruned = 0;

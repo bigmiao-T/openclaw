@@ -12,6 +12,9 @@ import { startTimelineServer, type TimelineServer, type TimelineServerParams } f
  *   /checkpoint list [agentId] [sessionId]
  *   /checkpoint create [label]
  *   /checkpoint restore <id> [files|transcript|all]
+ *   /checkpoint delete <id>
+ *   /checkpoint delete-session <agentId> <sessionId>
+ *   /checkpoint delete-before <date>
  *   /checkpoint timeline [port]
  *   /checkpoint sessions
  */
@@ -24,7 +27,7 @@ export function registerCheckpointCommand(
 
   api.registerCommand({
     name: "checkpoint",
-    description: "Manage workspace checkpoints (list, create, restore, timeline, sessions).",
+    description: "Manage workspace checkpoints (list, create, restore, delete, timeline, sessions).",
     acceptsArgs: true,
     async handler(ctx) {
       const parts = (ctx.args ?? "").trim().split(/\s+/);
@@ -103,6 +106,38 @@ export function registerCheckpointCommand(
           return { text: `Restored to \`${result.restoredCheckpoint.id}\` (scope: ${result.scope})` };
         }
 
+        case "delete": {
+          const checkpointId = parts[1];
+          if (!checkpointId) return { text: "Usage: /checkpoint delete <checkpointId>" };
+
+          const found = await engine.store.findCheckpoint(checkpointId);
+          if (!found) return { text: `Checkpoint not found: \`${checkpointId}\`` };
+
+          await engine.deleteCheckpoint(found.agentId, found.sessionId, checkpointId);
+          return { text: `Deleted checkpoint \`${checkpointId}\`` };
+        }
+
+        case "delete-session": {
+          const agentId = parts[1];
+          const sessionId = parts[2];
+          if (!agentId || !sessionId) {
+            return { text: "Usage: /checkpoint delete-session <agentId> <sessionId>\nUse `/checkpoint sessions` to see available sessions." };
+          }
+          const deleted = await engine.deleteSession(agentId, sessionId);
+          return { text: `Deleted ${deleted} checkpoints from session \`${agentId}/${sessionId}\`` };
+        }
+
+        case "delete-before": {
+          const dateStr = parts[1];
+          if (!dateStr) return { text: "Usage: /checkpoint delete-before <date>\nExamples: `2026-04-01`, `2026-04-07T12:00:00`" };
+
+          const cutoff = new Date(dateStr);
+          if (Number.isNaN(cutoff.getTime())) return { text: `Invalid date: \`${dateStr}\`` };
+
+          const deleted = await engine.deleteBefore(cutoff);
+          return { text: `Deleted ${deleted} checkpoints created before ${cutoff.toISOString()}` };
+        }
+
         case "timeline": {
           if (activeServer) {
             return { text: `Timeline viewer already running at ${activeServer.url}` };
@@ -129,7 +164,7 @@ export function registerCheckpointCommand(
         }
 
         default:
-          return { text: "Usage: /checkpoint [sessions|list <agent> <session>|create [label]|restore <id>|timeline [port]]" };
+          return { text: "Usage: /checkpoint [sessions|list|create|restore|delete|delete-session|delete-before|timeline]" };
       }
     },
   });
