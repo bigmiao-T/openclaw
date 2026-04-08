@@ -227,6 +227,96 @@ describe("CheckpointEngine", () => {
     });
   });
 
+  describe("deleteCheckpoint", () => {
+    it("deletes a checkpoint and its snapshot", async () => {
+      await writeFile("f.txt", "data");
+      const cp = await engine.createCheckpoint({
+        agentId: "a1",
+        sessionId: "s1",
+        runId: "r1",
+        workspaceDir,
+        trigger: { type: "manual" },
+      });
+
+      await engine.deleteCheckpoint("a1", "s1", cp.id);
+
+      const remaining = await store.listCheckpoints("a1", "s1");
+      expect(remaining.find((c) => c.id === cp.id)).toBeUndefined();
+    });
+
+    it("throws for nonexistent checkpoint", async () => {
+      await expect(
+        engine.deleteCheckpoint("a1", "s1", "nope"),
+      ).rejects.toThrow("not found");
+    });
+  });
+
+  describe("deleteSession", () => {
+    it("deletes all checkpoints in a session", async () => {
+      await writeFile("f.txt", "v1");
+      await engine.createCheckpoint({
+        agentId: "a1", sessionId: "s1", runId: "r1", workspaceDir,
+        trigger: { type: "manual" },
+      });
+      await writeFile("f.txt", "v2");
+      await engine.createCheckpoint({
+        agentId: "a1", sessionId: "s1", runId: "r1", workspaceDir,
+        trigger: { type: "manual" },
+      });
+
+      const deleted = await engine.deleteSession("a1", "s1");
+      expect(deleted).toBe(2);
+
+      const remaining = await store.listCheckpoints("a1", "s1");
+      expect(remaining).toHaveLength(0);
+    });
+
+    it("returns 0 for empty session", async () => {
+      const deleted = await engine.deleteSession("a1", "nonexistent");
+      expect(deleted).toBe(0);
+    });
+  });
+
+  describe("deleteBefore", () => {
+    it("deletes checkpoints older than the cutoff date", async () => {
+      await writeFile("f.txt", "data");
+      const cp = await engine.createCheckpoint({
+        agentId: "a1", sessionId: "s1", runId: "r1", workspaceDir,
+        trigger: { type: "manual" },
+      });
+
+      // Backdate the checkpoint by writing meta.json directly (saveCheckpoint would duplicate manifest entry)
+      const metaPath = path.join(tmpDir, "storage", "meta", "a1", "s1", cp.id, "meta.json");
+      const oldMeta = JSON.parse(await fs.readFile(metaPath, "utf8"));
+      oldMeta.createdAt = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      await fs.writeFile(metaPath, JSON.stringify(oldMeta, null, 2), "utf8");
+
+      // Create a recent checkpoint
+      await writeFile("f.txt", "data2");
+      await engine.createCheckpoint({
+        agentId: "a1", sessionId: "s1", runId: "r1", workspaceDir,
+        trigger: { type: "manual" },
+      });
+
+      const deleted = await engine.deleteBefore(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+      expect(deleted).toBe(1);
+
+      const remaining = await store.listCheckpoints("a1", "s1");
+      expect(remaining).toHaveLength(1);
+    });
+
+    it("returns 0 when no checkpoints are older", async () => {
+      await writeFile("f.txt", "data");
+      await engine.createCheckpoint({
+        agentId: "a1", sessionId: "s1", runId: "r1", workspaceDir,
+        trigger: { type: "manual" },
+      });
+
+      const deleted = await engine.deleteBefore(new Date("2020-01-01"));
+      expect(deleted).toBe(0);
+    });
+  });
+
   describe("pruneOld", () => {
     it("removes checkpoints older than retention period", async () => {
       await writeFile("f.txt", "data");
