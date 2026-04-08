@@ -7,16 +7,16 @@ export const TIMELINE_HTML = /* html */ `<!DOCTYPE html>
 <title>Agent Checkpoint Timeline</title>
 <style>
   :root {
-    --bg: #0d1117;
-    --surface: #161b22;
-    --border: #30363d;
-    --text: #c9d1d9;
-    --text-muted: #8b949e;
-    --accent: #58a6ff;
-    --green: #3fb950;
-    --red: #f85149;
-    --orange: #d29922;
-    --timeline-line: #30363d;
+    --bg: #ffffff;
+    --surface: #f6f8fa;
+    --border: #d0d7de;
+    --text: #1f2328;
+    --text-muted: #656d76;
+    --accent: #0969da;
+    --green: #1a7f37;
+    --red: #cf222e;
+    --orange: #9a6700;
+    --timeline-line: #d0d7de;
     --node-size: 14px;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -119,6 +119,38 @@ export const TIMELINE_HTML = /* html */ `<!DOCTYPE html>
     top: 10px;
   }
 
+  /* Tool action node (the execution that follows a checkpoint) */
+  .timeline-action {
+    position: relative;
+    padding: 2px 16px 16px 24px;
+    margin: 0 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .timeline-action .timeline-node {
+    position: absolute;
+    left: -24px;
+    top: 6px;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: var(--border);
+    border: 2px solid var(--bg);
+    z-index: 1;
+  }
+  .timeline-action.success .timeline-node { background: var(--green); }
+  .timeline-action.error .timeline-node { background: var(--red); }
+  .timeline-action-label {
+    font-weight: 500;
+    color: var(--text);
+  }
+  .timeline-action-result {
+    font-size: 11px;
+    margin-top: 1px;
+  }
+  .timeline-action-result.error { color: var(--red); }
+  .timeline-action-result.success { color: var(--green); }
+
   .timeline-time {
     font-size: 12px;
     color: var(--text-muted);
@@ -150,13 +182,14 @@ export const TIMELINE_HTML = /* html */ `<!DOCTYPE html>
     font-size: 11px;
     font-weight: 500;
   }
-  .badge-tool { background: rgba(88,166,255,0.15); color: var(--accent); }
-  .badge-manual { background: rgba(210,153,34,0.15); color: var(--orange); }
-  .badge-session { background: rgba(63,185,80,0.15); color: var(--green); }
-  .badge-error { background: rgba(248,81,73,0.15); color: var(--red); }
-  .badge-child { background: rgba(188,143,243,0.15); color: var(--purple); }
+  .badge-tool { background: rgba(9,105,218,0.1); color: var(--accent); }
+  .badge-manual { background: rgba(154,103,0,0.1); color: var(--orange); }
+  .badge-session { background: rgba(26,127,55,0.1); color: var(--green); }
+  .badge-error { background: rgba(207,34,46,0.1); color: var(--red); }
+  .badge-child { background: rgba(130,80,223,0.1); color: var(--purple); }
+  .badge-action { background: rgba(9,105,218,0.08); color: var(--text-muted); }
 
-  :root { --purple: #bc8ff3; }
+  :root { --purple: #8250df; }
 
   /* Session tree in selector */
   .session-option-child { padding-left: 20px; }
@@ -326,16 +359,16 @@ export const TIMELINE_HTML = /* html */ `<!DOCTYPE html>
     animation: toast-in 0.3s ease-out;
     max-width: 400px;
   }
-  .toast.success { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid var(--green); }
-  .toast.error { background: rgba(248,81,73,0.15); color: var(--red); border: 1px solid var(--red); }
-  .toast.info { background: rgba(88,166,255,0.15); color: var(--accent); border: 1px solid var(--accent); }
+  .toast.success { background: rgba(26,127,55,0.1); color: var(--green); border: 1px solid var(--green); }
+  .toast.error { background: rgba(207,34,46,0.1); color: var(--red); border: 1px solid var(--red); }
+  .toast.info { background: rgba(9,105,218,0.1); color: var(--accent); border: 1px solid var(--accent); }
   @keyframes toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 
   /* Confirm dialog */
   .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.6);
+    background: rgba(0,0,0,0.3);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -658,31 +691,46 @@ function renderTimelineItem(cp, isChild) {
   const isError = cp.toolResult?.success === false;
   const isManual = cp.trigger.type === 'manual';
   const isSession = cp.trigger.type === 'session_start';
+  const isBeforeTool = cp.trigger.type === 'before_tool_call';
 
   let cls = 'timeline-item';
   if (isChild) cls += ' child-session';
-  if (isError) cls += ' error';
-  else if (isManual) cls += ' manual';
+  if (isManual) cls += ' manual';
   else if (isSession) cls += ' session-start';
 
   const time = formatTime(cp.createdAt);
   const title = getTriggerLabel(cp);
   const filesCount = cp.snapshot.filesChanged.length;
-  const duration = cp.toolDurationMs != null ? formatDuration(cp.toolDurationMs) : null;
 
+  // Checkpoint dot — the saved state
   let html = '<div class="' + cls + '" data-id="' + cp.id + '">';
   html += '<div class="timeline-node"></div>';
   html += '<div class="timeline-time">' + time + '</div>';
   html += '<div class="timeline-title">' + title + '</div>';
   html += '<div class="timeline-meta">';
   html += '<span>' + filesCount + ' file' + (filesCount !== 1 ? 's' : '') + '</span>';
-  if (duration) html += '<span>' + duration + '</span>';
-  if (isError) html += '<span class="badge badge-error">error</span>';
   if (isManual) html += '<span class="badge badge-manual">manual</span>';
   if (isSession) html += '<span class="badge badge-session">session start</span>';
   if (isChild) html += '<span class="badge badge-child">child</span>';
-  if (cp.trigger.toolName && !isManual) html += '<span class="badge badge-tool">' + escapeHtml(cp.trigger.toolName) + '</span>';
   html += '</div></div>';
+
+  // Tool action dot — the operation that follows (only for before_tool_call or after_tool_call triggers)
+  if ((isBeforeTool || cp.trigger.type === 'after_tool_call') && cp.trigger.toolName) {
+    const actionCls = 'timeline-action' + (isError ? ' error' : ' success');
+    const duration = cp.toolDurationMs != null ? ' (' + formatDuration(cp.toolDurationMs) + ')' : '';
+    html += '<div class="' + actionCls + '">';
+    html += '<div class="timeline-node"></div>';
+    html += '<span class="timeline-action-label">' + escapeHtml(cp.trigger.toolName) + '</span>';
+    html += '<span class="badge badge-tool" style="margin-left:6px">' + (isBeforeTool ? 'execute' : 'after') + '</span>';
+    if (duration) html += '<span style="margin-left:6px;font-size:11px;color:var(--text-muted)">' + duration + '</span>';
+    if (isError && cp.toolResult?.errorMessage) {
+      html += '<div class="timeline-action-result error">' + escapeHtml(cp.toolResult.errorMessage) + '</div>';
+    } else if (cp.toolResult?.success) {
+      html += '<div class="timeline-action-result success">success</div>';
+    }
+    html += '</div>';
+  }
+
   return html;
 }
 
@@ -820,7 +868,8 @@ async function renderDetail(checkpointId) {
 function getTriggerLabel(cp) {
   if (cp.trigger.type === 'session_start') return 'Session Start';
   if (cp.trigger.type === 'manual') return cp.trigger.toolName || 'Manual Checkpoint';
-  if (cp.trigger.toolName) return 'After: ' + cp.trigger.toolName;
+  if (cp.trigger.type === 'before_tool_call') return 'Checkpoint';
+  if (cp.trigger.type === 'after_tool_call' && cp.trigger.toolName) return 'After: ' + cp.trigger.toolName;
   return cp.trigger.type;
 }
 
