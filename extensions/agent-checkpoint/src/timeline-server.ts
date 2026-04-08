@@ -17,6 +17,8 @@ type TimelineEvent = {
   /** Sequence index from the source (JSONL line number or checkpoint order) for stable sort within same epoch. */
   seq: number;
   content: string;
+  /** Full content for detail view (not truncated). Only set when different from content. */
+  fullContent?: string;
   toolName?: string;
   isError?: boolean;
   checkpointId?: string;
@@ -194,6 +196,14 @@ function truncate(s: string, max = MAX_CONTENT_PREVIEW): string {
   return s.length > max ? s.slice(0, max) + "..." : s;
 }
 
+/** Returns { content, fullContent } — fullContent is set only when truncated. */
+function contentPair(s: string): { content: string; fullContent?: string } {
+  if (s.length > MAX_CONTENT_PREVIEW) {
+    return { content: truncate(s), fullContent: s };
+  }
+  return { content: s };
+}
+
 /** Extract text from a JSONL message content block array. */
 function extractText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -265,14 +275,14 @@ async function readSessionTranscript(agentId: string, sessionId: string): Promis
     if (msg.role === "user") {
       const text = extractText(msg.content);
       if (text) {
-        events.push({ type: "user_message", seq: seq++, epochMs, timestamp: ts, content: truncate(text) });
+        events.push({ type: "user_message", seq: seq++, epochMs, timestamp: ts, ...contentPair(text) });
       }
     } else if (msg.role === "assistant") {
       const text = extractText(msg.content);
       const tools = extractToolCalls(msg.content);
 
       if (text) {
-        events.push({ type: "assistant_reply", seq: seq++, epochMs, timestamp: ts, content: truncate(text) });
+        events.push({ type: "assistant_reply", seq: seq++, epochMs, timestamp: ts, ...contentPair(text) });
       }
       for (const tool of tools) {
         events.push({ type: "tool_call", seq: seq++, epochMs, timestamp: ts, content: tool.name, toolName: tool.name });
@@ -284,7 +294,7 @@ async function readSessionTranscript(agentId: string, sessionId: string): Promis
         seq: seq++,
         epochMs,
         timestamp: ts,
-        content: truncate(text || "(no output)"),
+        ...contentPair(text || "(no output)"),
         toolName: msg.toolName,
         isError: msg.isError === true,
       });

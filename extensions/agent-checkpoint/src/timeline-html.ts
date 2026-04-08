@@ -522,20 +522,35 @@ function renderTimelineEvents(events) {
   const sorted = [...events].reverse();
 
   let html = '<div class="timeline">';
-  for (const ev of sorted) {
-    html += renderEventItem(ev);
+  for (let i = 0; i < sorted.length; i++) {
+    html += renderEventItem(sorted[i], i);
   }
   html += '</div>';
   timelinePanel.innerHTML = html;
 
-  // Click handlers — only checkpoint items are clickable
-  timelinePanel.querySelectorAll('.timeline-item[data-id]').forEach(el => {
-    el.addEventListener('click', () => selectCheckpoint(el.dataset.id));
+  // Click handlers — all items are clickable
+  timelinePanel.querySelectorAll('.timeline-item[data-idx]').forEach(el => {
+    el.addEventListener('click', () => {
+      const idx = Number(el.dataset.idx);
+      const ev = sorted[idx];
+      if (!ev) return;
+      // Update active state
+      timelinePanel.querySelectorAll('.timeline-item').forEach(e => e.classList.remove('active'));
+      el.classList.add('active');
+      if (ev.type === 'checkpoint' && ev.checkpointId) {
+        activeCheckpointId = ev.checkpointId;
+        renderCheckpointDetail(ev.checkpointId);
+      } else {
+        activeCheckpointId = null;
+        renderEventDetail(ev);
+      }
+    });
   });
 }
 
-function renderEventItem(ev) {
+function renderEventItem(ev, idx) {
   const time = formatTime(ev.timestamp);
+  const di = ' data-idx="' + idx + '"';
 
   if (ev.type === 'checkpoint') {
     const cp = ev.checkpoint;
@@ -545,7 +560,7 @@ function renderEventItem(ev) {
     if (isManual) cls += ' manual';
     else if (isSession) cls += ' session-start';
 
-    let html = '<div class="' + cls + '" data-id="' + escapeAttr(ev.checkpointId) + '">';
+    let html = '<div class="' + cls + '"' + di + ' data-id="' + escapeAttr(ev.checkpointId) + '">';
     html += '<div class="timeline-node"></div>';
     html += '<div class="timeline-time">' + time + '</div>';
     html += '<div class="timeline-title">' + escapeHtml(ev.content) + '</div>';
@@ -558,7 +573,7 @@ function renderEventItem(ev) {
   }
 
   if (ev.type === 'user_message') {
-    let html = '<div class="timeline-item user">';
+    let html = '<div class="timeline-item user"' + di + '>';
     html += '<div class="timeline-node"></div>';
     html += '<div class="timeline-time">' + time + '</div>';
     html += '<div class="timeline-title">User</div>';
@@ -568,7 +583,7 @@ function renderEventItem(ev) {
   }
 
   if (ev.type === 'assistant_reply') {
-    let html = '<div class="timeline-item assistant">';
+    let html = '<div class="timeline-item assistant"' + di + '>';
     html += '<div class="timeline-node"></div>';
     html += '<div class="timeline-time">' + time + '</div>';
     html += '<div class="timeline-title">Assistant</div>';
@@ -578,7 +593,7 @@ function renderEventItem(ev) {
   }
 
   if (ev.type === 'tool_call') {
-    let html = '<div class="timeline-item tool-call">';
+    let html = '<div class="timeline-item tool-call"' + di + '>';
     html += '<div class="timeline-node"></div>';
     html += '<div class="timeline-time">' + time + '</div>';
     html += '<div class="timeline-title">Tool: ' + escapeHtml(ev.toolName || ev.content) + '</div>';
@@ -587,7 +602,7 @@ function renderEventItem(ev) {
   }
 
   if (ev.type === 'tool_result') {
-    let html = '<div class="timeline-item tool-result' + (ev.isError ? ' error' : '') + '">';
+    let html = '<div class="timeline-item tool-result' + (ev.isError ? ' error' : '') + '"' + di + '>';
     html += '<div class="timeline-node"></div>';
     html += '<div class="timeline-time">' + time + '</div>';
     html += '<div class="timeline-title">' + (ev.toolName ? ev.toolName + ' ' : '') + 'Result</div>';
@@ -597,7 +612,7 @@ function renderEventItem(ev) {
   }
 
   if (ev.type === 'session_start') {
-    let html = '<div class="timeline-item session-start">';
+    let html = '<div class="timeline-item session-start"' + di + '>';
     html += '<div class="timeline-node"></div>';
     html += '<div class="timeline-time">' + time + '</div>';
     html += '<div class="timeline-title">Session Started</div>';
@@ -606,7 +621,7 @@ function renderEventItem(ev) {
   }
 
   if (ev.type === 'compaction') {
-    let html = '<div class="timeline-item compaction">';
+    let html = '<div class="timeline-item compaction"' + di + '>';
     html += '<div class="timeline-node"></div>';
     html += '<div class="timeline-time">' + time + '</div>';
     html += '<div class="timeline-title">Context Compacted</div>';
@@ -618,18 +633,40 @@ function renderEventItem(ev) {
   return '';
 }
 
-function selectCheckpoint(id) {
-  activeCheckpointId = id;
-  // Update active state
-  timelinePanel.querySelectorAll('.timeline-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.id === id);
-  });
-  renderDetail(id);
-}
-
 // ── Detail ──
 
-async function renderDetail(checkpointId) {
+function renderEventDetail(ev) {
+  const typeLabels = {
+    user_message: 'User Message',
+    assistant_reply: 'Assistant Reply',
+    tool_call: 'Tool Call',
+    tool_result: 'Tool Result',
+    session_start: 'Session Start',
+    compaction: 'Context Compaction',
+  };
+
+  let html = '<div class="detail-header">';
+  html += '<h2>' + escapeHtml(typeLabels[ev.type] || ev.type) + '</h2>';
+  html += '<div class="sub">' + ev.timestamp + '</div>';
+  html += '</div>';
+
+  html += '<div class="detail-section"><h3>Details</h3>';
+  html += '<dl class="detail-grid">';
+  html += dt('Type') + dd(ev.type);
+  html += dt('Time') + dd(ev.timestamp);
+  if (ev.toolName) html += dt('Tool') + dd(ev.toolName);
+  if (ev.isError) html += dt('Status') + dd('Error');
+  html += '</dl></div>';
+
+  const fullText = ev.fullContent || ev.content;
+  html += '<div class="detail-section"><h3>Content</h3>';
+  html += '<div class="diff-block">' + escapeHtml(fullText) + '</div>';
+  html += '</div>';
+
+  detailPanel.innerHTML = html;
+}
+
+async function renderCheckpointDetail(checkpointId) {
   const cp = currentCheckpoints.find(c => c.id === checkpointId);
   if (!cp) return;
 
