@@ -184,14 +184,6 @@ export const TIMELINE_HTML = /* html */ `<!DOCTYPE html>
   .badge-tool { background: rgba(9,105,218,0.1); color: var(--accent); }
   .badge-manual { background: rgba(154,103,0,0.1); color: var(--orange); }
   .badge-session { background: rgba(26,127,55,0.1); color: var(--green); }
-  .badge-error { background: rgba(207,34,46,0.1); color: var(--red); }
-  .badge-child { background: rgba(130,80,223,0.1); color: var(--purple); }
-  .badge-action { background: rgba(9,105,218,0.08); color: var(--text-muted); }
-
-  :root { --purple: #8250df; }
-
-  /* Session tree in selector */
-  .session-option-child { padding-left: 20px; }
 
   /* Relation links */
   .relation-section { margin-bottom: 20px; }
@@ -216,29 +208,6 @@ export const TIMELINE_HTML = /* html */ `<!DOCTYPE html>
     color: var(--text-muted);
     margin-right: 8px;
   }
-
-  /* Child checkpoint items in timeline */
-  .timeline-item.child-session {
-    opacity: 0.7;
-    border-left: 2px solid var(--purple);
-    margin-left: 12px;
-  }
-  .timeline-item.child-session .timeline-node {
-    background: var(--purple);
-    width: 10px;
-    height: 10px;
-    left: -21px;
-    top: 14px;
-  }
-  .child-session-header {
-    padding: 6px 16px 6px 36px;
-    margin: 8px 8px 0;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--purple);
-    cursor: pointer;
-  }
-  .child-session-header:hover { text-decoration: underline; }
 
   /* Detail panel */
   .detail-header {

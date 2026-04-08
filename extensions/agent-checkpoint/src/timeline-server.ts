@@ -12,6 +12,8 @@ import { TIMELINE_HTML } from "./timeline-html.js";
 type TimelineEvent = {
   type: "user_message" | "assistant_reply" | "tool_call" | "tool_result" | "checkpoint" | "session_start" | "compaction";
   timestamp: string;
+  /** Sequence index from the source (JSONL line number or checkpoint order) for stable sort within same timestamp. */
+  seq: number;
   content: string;
   toolName?: string;
   isError?: boolean;
@@ -214,6 +216,7 @@ async function readSessionTranscript(agentId: string, sessionId: string): Promis
   }
 
   const events: TimelineEvent[] = [];
+  let seq = 0;
   for (const line of raw.split(/\r?\n/)) {
     if (!line.trim()) continue;
     let entry: any;
@@ -224,13 +227,14 @@ async function readSessionTranscript(agentId: string, sessionId: string): Promis
     }
 
     if (entry.type === "session" && entry.timestamp) {
-      events.push({ type: "session_start", timestamp: entry.timestamp, content: "Session started" });
+      events.push({ type: "session_start", seq: seq++, timestamp: entry.timestamp, content: "Session started" });
       continue;
     }
 
     if (entry.type === "compaction" && entry.timestamp) {
       events.push({
         type: "compaction",
+        seq: seq++,
         timestamp: entry.timestamp,
         content: entry.summary ? truncate(entry.summary) : "Context compacted",
       });
@@ -246,22 +250,23 @@ async function readSessionTranscript(agentId: string, sessionId: string): Promis
     if (msg.role === "user") {
       const text = extractText(msg.content);
       if (text) {
-        events.push({ type: "user_message", timestamp: ts, content: truncate(text) });
+        events.push({ type: "user_message", seq: seq++, timestamp: ts, content: truncate(text) });
       }
     } else if (msg.role === "assistant") {
       const text = extractText(msg.content);
       const tools = extractToolCalls(msg.content);
 
       if (text) {
-        events.push({ type: "assistant_reply", timestamp: ts, content: truncate(text) });
+        events.push({ type: "assistant_reply", seq: seq++, timestamp: ts, content: truncate(text) });
       }
       for (const tool of tools) {
-        events.push({ type: "tool_call", timestamp: ts, content: tool.name, toolName: tool.name });
+        events.push({ type: "tool_call", seq: seq++, timestamp: ts, content: tool.name, toolName: tool.name });
       }
     } else if (msg.role === "toolResult") {
       const text = typeof msg.content === "string" ? msg.content : extractText(msg.content);
       events.push({
         type: "tool_result",
+        seq: seq++,
         timestamp: ts,
         content: truncate(text || "(no output)"),
         toolName: msg.toolName,
@@ -272,10 +277,18 @@ async function readSessionTranscript(agentId: string, sessionId: string): Promis
   return events;
 }
 
-/** Merge session transcript events with checkpoint data into a unified timeline. */
+/**
+ * Merge session transcript events with checkpoint data into a unified timeline.
+ * Uses seq (source order) as primary tiebreaker within the same timestamp,
+ * so multiple tool calls in the same second stay correctly ordered.
+ * Checkpoint seq is assigned by finding their insertion point among transcript events.
+ */
 function buildTimeline(transcriptEvents: TimelineEvent[], checkpoints: CheckpointMeta[]): TimelineEvent[] {
-  const cpEvents: TimelineEvent[] = checkpoints.map((cp) => ({
+  const cpEvents: TimelineEvent[] = checkpoints.map((cp, i) => ({
     type: "checkpoint" as const,
+    // Checkpoint seq: use a fractional offset between transcript events at the same timestamp.
+    // This places checkpoints just before the next transcript event after them.
+    seq: findInsertionSeq(transcriptEvents, cp.createdAt, i),
     timestamp: cp.createdAt,
     content: cp.trigger.toolName
       ? `Checkpoint before ${cp.trigger.toolName}`
@@ -288,8 +301,28 @@ function buildTimeline(transcriptEvents: TimelineEvent[], checkpoints: Checkpoin
   }));
 
   const all = [...transcriptEvents, ...cpEvents];
-  all.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  all.sort((a, b) => {
+    const cmp = a.timestamp.localeCompare(b.timestamp);
+    if (cmp !== 0) return cmp;
+    return a.seq - b.seq;
+  });
   return all;
+}
+
+/**
+ * Find a seq value for a checkpoint that places it correctly among transcript events.
+ * Returns a value between the seq of the last transcript event at or before this timestamp
+ * and the next transcript event, so checkpoint appears just before the tool call it guards.
+ */
+function findInsertionSeq(transcriptEvents: TimelineEvent[], cpTimestamp: string, cpIndex: number): number {
+  let lastBefore = -1;
+  for (const ev of transcriptEvents) {
+    if (ev.timestamp <= cpTimestamp && ev.seq > lastBefore) {
+      lastBefore = ev.seq;
+    }
+  }
+  // Place checkpoint between lastBefore and lastBefore+1, using cpIndex to separate multiple checkpoints
+  return lastBefore + 0.5 + cpIndex * 0.001;
 }
 
 function jsonResponse(res: http.ServerResponse, data: unknown): void {
