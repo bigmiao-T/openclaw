@@ -391,6 +391,7 @@ function triggerToAbbr(trigger: CheckpointTrigger): string {
       return "start";
     case "manual":
       return "manual";
+    case "before_tool_call":
     case "after_tool_call":
       return trigger.toolName
         ? trigger.toolName.slice(0, 16).toLowerCase().replace(/[^a-z0-9]/g, "-")

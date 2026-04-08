@@ -4,7 +4,7 @@ export type TriggerMode = "all_tools" | "mutating_tools" | "manual";
 export type RestoreScope = "files" | "transcript" | "all";
 
 export type CheckpointTrigger = {
-  type: "after_tool_call" | "manual" | "session_start";
+  type: "before_tool_call" | "after_tool_call" | "manual" | "session_start";
   toolName?: string;
   toolCallId?: string;
 };
