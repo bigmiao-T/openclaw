@@ -277,6 +277,15 @@ export class CheckpointEngine {
     return checkpoints.length;
   }
 
+  async deleteAll(): Promise<number> {
+    let deleted = 0;
+    for (const { agentId, sessionId } of await this.store.listSessions()) {
+      deleted += await this.deleteSession(agentId, sessionId);
+    }
+    this.logger?.info(`Deleted all checkpoints (${deleted} total)`);
+    return deleted;
+  }
+
   async deleteBefore(cutoffDate: Date): Promise<number> {
     const cutoff = cutoffDate.getTime();
     let deleted = 0;

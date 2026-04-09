@@ -16,6 +16,7 @@ import { startTimelineServer, type TimelineServer, type TimelineServerParams } f
  *   /checkpoint delete <id>
  *   /checkpoint delete-session <agentId> <sessionId>
  *   /checkpoint delete-before <date>
+ *   /checkpoint delete-all
  *   /checkpoint timeline [port]
  *   /checkpoint sessions
  */
@@ -156,6 +157,11 @@ export function registerCheckpointCommand(
           return { text: `Deleted ${deleted} checkpoints created before ${cutoff.toISOString()}` };
         }
 
+        case "delete-all": {
+          const deleted = await engine.deleteAll();
+          return { text: `Deleted all checkpoints (${deleted} total)` };
+        }
+
         case "timeline": {
           if (activeServer) {
             return { text: `Timeline viewer already running at ${activeServer.url}` };
@@ -182,7 +188,7 @@ export function registerCheckpointCommand(
         }
 
         default:
-          return { text: "Usage: /checkpoint [sessions|list|create|restore|delete|delete-session|delete-before|timeline]" };
+          return { text: "Usage: /checkpoint [sessions|list|create|restore|delete|delete-session|delete-before|delete-all|timeline]" };
       }
     },
   });
