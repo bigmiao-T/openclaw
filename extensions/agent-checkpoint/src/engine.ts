@@ -11,9 +11,6 @@ import type {
   SessionRef,
 } from "./types.js";
 
-const TASKFLOW_DB_BACKUP_NAME = "_taskflow.sqlite";
-const TASKFLOW_DB_SUFFIXES = ["", "-wal", "-shm"];
-
 export type CreateCheckpointParams = {
   agentId: string;
   sessionId: string;
@@ -45,7 +42,6 @@ export class CheckpointEngine {
   private readonly backend: SnapshotBackend;
   private readonly config: CheckpointPluginConfig;
   private readonly logger?: PluginLogger;
-  private readonly taskFlowDbPath?: string;
 
   /** Tracks last snapshotRef per session for parent chain. */
   private readonly lastRefBySession = new Map<string, string>();
@@ -54,14 +50,11 @@ export class CheckpointEngine {
     backend: SnapshotBackend;
     config: CheckpointPluginConfig;
     logger?: PluginLogger;
-    /** Path to task flow SQLite DB for backup/restore. */
-    taskFlowDbPath?: string;
   }) {
     this.store = params.store;
     this.backend = params.backend;
     this.config = params.config;
     this.logger = params.logger;
-    this.taskFlowDbPath = params.taskFlowDbPath;
   }
 
   shouldCreateCheckpoint(toolName: string): boolean {
@@ -121,9 +114,6 @@ export class CheckpointEngine {
 
     await this.store.saveCheckpoint(meta);
     this.lastRefBySession.set(sessionKey, snapshot.snapshotRef);
-
-    // Backup task flow SQLite alongside the snapshot
-    await this.backupTaskFlowDb(snapshot.snapshotRef);
 
     const toolDesc = trigger.toolName ? ` before ${trigger.toolName}` : "";
     this.logger?.info(
@@ -196,9 +186,6 @@ export class CheckpointEngine {
     manifest.currentHead = checkpointId;
     manifest.checkpoints = manifest.checkpoints.slice(0, idx >= 0 ? idx + 1 : undefined);
     await this.store.writeManifest(agentId, sessionId, manifest);
-
-    // Restore task flow SQLite from backup
-    await this.restoreTaskFlowDb(meta.snapshot.snapshotRef);
 
     // Compute diff of changes that were undone
     let diff = "";
@@ -338,40 +325,6 @@ export class CheckpointEngine {
     return pruned;
   }
 
-  private async backupTaskFlowDb(snapshotRef: string): Promise<void> {
-    if (!this.taskFlowDbPath) return;
-    const dir = this.backend.getSnapshotDir(snapshotRef);
-    for (const suffix of TASKFLOW_DB_SUFFIXES) {
-      const src = this.taskFlowDbPath + suffix;
-      const dst = path.join(dir, TASKFLOW_DB_BACKUP_NAME + suffix);
-      try {
-        await fs.copyFile(src, dst);
-      } catch {
-        // WAL/SHM files may not exist; ignore missing files
-      }
-    }
-  }
-
-  private async restoreTaskFlowDb(snapshotRef: string): Promise<void> {
-    if (!this.taskFlowDbPath) return;
-    const dir = this.backend.getSnapshotDir(snapshotRef);
-    const mainBackup = path.join(dir, TASKFLOW_DB_BACKUP_NAME);
-    try {
-      await fs.access(mainBackup);
-    } catch {
-      // No task flow backup in this snapshot — nothing to restore
-      return;
-    }
-    for (const suffix of TASKFLOW_DB_SUFFIXES) {
-      const src = path.join(dir, TASKFLOW_DB_BACKUP_NAME + suffix);
-      const dst = this.taskFlowDbPath + suffix;
-      try {
-        await fs.copyFile(src, dst);
-      } catch {
-        // WAL/SHM files may not exist depending on SQLite journal mode
-      }
-    }
-  }
 }
 
 /**

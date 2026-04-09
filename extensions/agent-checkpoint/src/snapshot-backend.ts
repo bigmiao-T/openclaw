@@ -52,7 +52,7 @@ export interface SnapshotBackend {
 
   /**
    * Return the filesystem directory where a snapshot's data is stored.
-   * Used by engine for co-located data (e.g. task flow DB backups).
+   * Used by engine for co-located data (e.g. transcript snapshots).
    */
   getSnapshotDir(snapshotRef: string): string;
 
