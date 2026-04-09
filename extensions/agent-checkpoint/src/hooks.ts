@@ -1,6 +1,12 @@
+import os from "node:os";
+import path from "node:path";
 import type { OpenClawPluginApi, OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry";
 import type { CheckpointEngine } from "./engine.js";
 import type { SessionRef } from "./types.js";
+
+function sessionTranscriptPath(agentId: string, sessionId: string): string {
+  return path.join(os.homedir(), ".openclaw", "agents", agentId, "sessions", `${sessionId}.jsonl`);
+}
 
 /**
  * Encapsulates mutable hook state (workspace dirs, session key index)
@@ -86,6 +92,7 @@ export function registerCheckpointHooks(
           toolName,
           toolCallId: (context as any).toolCallId,
         },
+        sessionTranscriptPath: sessionTranscriptPath(ctx.agentId, ctx.sessionId),
       });
       await engine.pruneExcess(ctx.agentId, ctx.sessionId);
     } catch (error) {
@@ -112,6 +119,7 @@ export function registerCheckpointHooks(
         runId: "",
         workspaceDir,
         trigger: { type: "session_start" },
+        sessionTranscriptPath: sessionTranscriptPath(agentId, sessionId),
       });
     } catch (error) {
       api.logger?.warn(`Baseline checkpoint failed: ${String(error)}`);
