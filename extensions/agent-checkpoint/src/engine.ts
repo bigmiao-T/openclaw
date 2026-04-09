@@ -125,7 +125,7 @@ export class CheckpointEngine {
     // Backup task flow SQLite alongside the snapshot
     await this.backupTaskFlowDb(snapshot.snapshotRef);
 
-    const toolDesc = trigger.toolName ? ` after ${trigger.toolName}` : "";
+    const toolDesc = trigger.toolName ? ` before ${trigger.toolName}` : "";
     this.logger?.info(
       `Checkpoint ${checkpointId} created${toolDesc} (${snapshot.filesChanged.length} files changed)`,
     );
