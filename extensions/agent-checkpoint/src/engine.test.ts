@@ -79,8 +79,8 @@ describe("CheckpointEngine", () => {
         trigger: { type: "before_tool_call", toolName: "Write" },
       });
 
-      // ID format: {agent}-{session_prefix}-{seq:03d}-{trigger_abbr}
-      expect(meta.id).toBe("a1-s1-001-write");
+      // ID format: {agent}-{session_prefix}-{seq:03d}-{trigger_abbr}-{ts}
+      expect(meta.id).toMatch(/^a1-s1-001-write-\d+$/);
       expect(meta.agentId).toBe("a1");
       expect(meta.sessionId).toBe("s1");
       expect(meta.trigger.toolName).toBe("Write");
@@ -107,8 +107,8 @@ describe("CheckpointEngine", () => {
         trigger: { type: "manual" },
       });
 
-      expect(cp1.id).toBe("a1-s1-001-manual");
-      expect(cp2.id).toBe("a1-s1-002-manual");
+      expect(cp1.id).toMatch(/^a1-s1-001-manual-\d+$/);
+      expect(cp2.id).toMatch(/^a1-s1-002-manual-\d+$/);
       expect(cp2.parentId).toBe(cp1.id);
     });
 

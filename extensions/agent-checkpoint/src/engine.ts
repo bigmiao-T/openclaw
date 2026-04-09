@@ -363,8 +363,9 @@ async function captureTranscriptSnapshot(
 
 /**
  * Build a human-readable checkpoint ID.
- * Format: {agent}-{session_prefix}-{seq:03d}-{trigger_abbr}
- * Example: main-a1b2c3-001-exec, main-a1b2c3-002-start
+ * Format: {agent}-{session_prefix}-{seq:03d}-{trigger_abbr}-{ts}
+ * Example: main-a1b2c3-001-exec-1775754159, main-a1b2c3-002-start-1775754200
+ * The timestamp suffix ensures uniqueness even when seq resets after restore.
  */
 function buildCheckpointId(
   agentId: string,
@@ -376,7 +377,8 @@ function buildCheckpointId(
   const session = sessionId.slice(0, 6);
   const seqStr = String(seq).padStart(3, "0");
   const triggerAbbr = triggerToAbbr(trigger);
-  return `${agent}-${session}-${seqStr}-${triggerAbbr}`;
+  const ts = Math.floor(Date.now() / 1000);
+  return `${agent}-${session}-${seqStr}-${triggerAbbr}-${ts}`;
 }
 
 function triggerToAbbr(trigger: CheckpointTrigger): string {
