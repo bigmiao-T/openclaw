@@ -271,8 +271,8 @@ export class CheckpointEngine {
     const checkpoints = await this.store.listCheckpoints(agentId, sessionId);
     for (const meta of checkpoints) {
       await this.backend.deleteSnapshot(meta.snapshot.snapshotRef);
-      await this.store.deleteCheckpoint(agentId, sessionId, meta.id);
     }
+    await this.store.deleteSessionDir(agentId, sessionId);
     this.logger?.info(`Deleted session ${agentId}/${sessionId} (${checkpoints.length} checkpoints)`);
     return checkpoints.length;
   }

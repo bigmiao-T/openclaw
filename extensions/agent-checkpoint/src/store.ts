@@ -102,6 +102,12 @@ export class CheckpointStore {
     }
   }
 
+  /** Remove the entire session directory (manifest + all checkpoint metadata). */
+  async deleteSessionDir(agentId: string, sessionId: string): Promise<void> {
+    const sessionDir = path.join(this.rootDir, agentId, sessionId);
+    await fs.rm(sessionDir, { recursive: true, force: true });
+  }
+
   // ── Queries ─────────────────────────────────────────────────────────────
 
   async listSessions(
