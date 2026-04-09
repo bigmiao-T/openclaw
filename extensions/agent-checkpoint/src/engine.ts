@@ -164,6 +164,14 @@ export class CheckpointEngine {
         const newTranscriptPath = path.join(sessionsDir, newFileName);
         await fs.copyFile(meta.transcript.snapshotFile, newTranscriptPath);
 
+        // Append a restore notice so the dashboard shows it after refresh
+        const notice = JSON.stringify({
+          type: "compaction",
+          summary: `[Checkpoint Restore] Rolled back to checkpoint ${checkpointId}. Conversation history has been restored to this point.`,
+          timestamp: new Date().toISOString(),
+        });
+        await fs.appendFile(newTranscriptPath, "\n" + notice + "\n");
+
         if (params.onTranscriptRestored) {
           // Caller updates the session store to point to the new file
           await params.onTranscriptRestored(newTranscriptPath);

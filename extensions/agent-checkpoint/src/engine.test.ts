@@ -240,9 +240,10 @@ describe("CheckpointEngine", () => {
       // A new file should have been created (not overwriting the original)
       expect(restoredPath).toBeDefined();
       expect(restoredPath).not.toBe(transcriptPath);
-      // New file has the original content
+      // New file has the original content plus a restore notice
       const restoredContent = await fs.readFile(restoredPath!, "utf8");
-      expect(restoredContent).toBe(originalContent);
+      expect(restoredContent).toContain(originalContent.trim());
+      expect(restoredContent).toContain("Checkpoint Restore");
       // Original file is untouched (still compacted)
       const originalNow = await fs.readFile(transcriptPath, "utf8");
       expect(originalNow).toContain("compaction");
@@ -299,10 +300,11 @@ describe("CheckpointEngine", () => {
       // Files restored to cp1 state
       expect(await readFile("data.txt")).toBe("v1");
 
-      // Transcript forked to new file with cp1 content
+      // Transcript forked to new file with cp1 content + restore notice
       expect(restoredTranscriptPath).toBeDefined();
       const restoredContent = await fs.readFile(restoredTranscriptPath!, "utf8");
-      expect(restoredContent).toBe(initialTranscript);
+      expect(restoredContent).toContain(initialTranscript.trim());
+      expect(restoredContent).toContain("Checkpoint Restore");
 
       // Original transcript untouched
       const originalContent = await fs.readFile(transcriptPath, "utf8");

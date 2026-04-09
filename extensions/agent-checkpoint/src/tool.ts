@@ -130,7 +130,7 @@ export function createCheckpointTool(params: {
           });
 
           return {
-            content: [{ type: "text" as const, text: `Restored to ${result.restoredCheckpoint.id} (scope: ${result.scope}, files: ${result.filesRestored}, transcript: ${result.transcriptRestored})` }],
+            content: [{ type: "text" as const, text: `Restored to ${result.restoredCheckpoint.id} (scope: ${result.scope}, files: ${result.filesRestored}, transcript: ${result.transcriptRestored})${result.transcriptRestored ? "\nNote: Please refresh the dashboard to see the restored conversation." : ""}` }],
             details: { action, checkpointId, scope: result.scope },
           };
         }

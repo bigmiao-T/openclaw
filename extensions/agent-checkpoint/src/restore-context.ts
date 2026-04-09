@@ -43,6 +43,9 @@ export function buildContinuationContext(params: {
   if (diff) {
     summaryParts.push("", "**Changes undone:**", "```", diff.slice(0, 2000), "```");
   }
+  if (transcriptRestored) {
+    summaryParts.push("", "> Please refresh the dashboard to see the restored conversation.");
+  }
 
   // --- Agent prompt (tool result the LLM sees) ---
   const promptParts: string[] = [];

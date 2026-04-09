@@ -981,6 +981,7 @@ async function restoreToCheckpoint(checkpointId, scope) {
         if (!res.ok) throw new Error(data.error || 'Restore failed');
         let msg = 'Restored to ' + data.checkpointId + ' (scope: ' + data.scope + ')';
         if (data.summary) msg = data.summary.split('\\n')[0];
+        if (data.transcriptRestored) msg += '. Please refresh the dashboard to see the restored conversation.';
         showToast(msg, 'success');
         // Reload timeline since later checkpoints were pruned
         if (currentSession) {
