@@ -247,6 +247,76 @@ describe("CheckpointEngine", () => {
       const originalNow = await fs.readFile(transcriptPath, "utf8");
       expect(originalNow).toContain("compaction");
     });
+    it("full restore flow: files + transcript fork + orphan cleanup", async () => {
+      // Setup session transcript
+      const sessionsDir = path.join(tmpDir, "sessions");
+      await fs.mkdir(sessionsDir, { recursive: true });
+      const transcriptPath = path.join(sessionsDir, "s1.jsonl");
+      const initialTranscript = '{"type":"session","timestamp":"2026-04-09T10:00:00Z"}\n'
+        + '{"type":"message","message":{"role":"user","content":"step 1"}}\n';
+      await fs.writeFile(transcriptPath, initialTranscript);
+
+      // Create cp1: file=v1, transcript=2 lines
+      await writeFile("data.txt", "v1");
+      const cp1 = await engine.createCheckpoint({
+        agentId: "a1", sessionId: "s1", runId: "r1", workspaceDir,
+        trigger: { type: "before_tool_call", toolName: "write" },
+        sessionTranscriptPath: transcriptPath,
+      });
+
+      // More activity after cp1
+      await fs.appendFile(transcriptPath, '{"type":"message","message":{"role":"assistant","content":"done step 1"}}\n');
+      await writeFile("data.txt", "v2");
+      const cp2 = await engine.createCheckpoint({
+        agentId: "a1", sessionId: "s1", runId: "r1", workspaceDir,
+        trigger: { type: "before_tool_call", toolName: "write" },
+        sessionTranscriptPath: transcriptPath,
+      });
+
+      // Even more activity after cp2
+      await fs.appendFile(transcriptPath, '{"type":"message","message":{"role":"user","content":"step 3"}}\n');
+      await writeFile("data.txt", "v3");
+      await writeFile("extra.txt", "should disappear");
+
+      // Verify pre-restore state
+      const manifestBefore = await store.getManifest("a1", "s1");
+      expect(manifestBefore?.checkpoints).toEqual([cp1.id, cp2.id]);
+
+      // Restore to cp1 with scope "all"
+      let restoredTranscriptPath: string | undefined;
+      const result = await engine.restoreCheckpoint({
+        agentId: "a1", sessionId: "s1", checkpointId: cp1.id, workspaceDir,
+        scope: "all",
+        sessionTranscriptPath: transcriptPath,
+        onTranscriptRestored: async (newPath) => { restoredTranscriptPath = newPath; },
+      });
+
+      // Verify results
+      expect(result.filesRestored).toBe(true);
+      expect(result.transcriptRestored).toBe(true);
+      expect(result.scope).toBe("all");
+
+      // Files restored to cp1 state
+      expect(await readFile("data.txt")).toBe("v1");
+
+      // Transcript forked to new file with cp1 content
+      expect(restoredTranscriptPath).toBeDefined();
+      const restoredContent = await fs.readFile(restoredTranscriptPath!, "utf8");
+      expect(restoredContent).toBe(initialTranscript);
+
+      // Original transcript untouched
+      const originalContent = await fs.readFile(transcriptPath, "utf8");
+      expect(originalContent).toContain("step 3");
+
+      // Manifest trimmed: only cp1 remains, cp2 is orphaned and deleted
+      const manifestAfter = await store.getManifest("a1", "s1");
+      expect(manifestAfter?.checkpoints).toEqual([cp1.id]);
+      expect(manifestAfter?.currentHead).toBe(cp1.id);
+
+      // cp2 metadata and snapshot are gone
+      const cp2Meta = await store.getCheckpoint("a1", "s1", cp2.id);
+      expect(cp2Meta).toBeNull();
+    });
   });
 
   describe("getCheckpointDiff", () => {
