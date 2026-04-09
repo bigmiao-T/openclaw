@@ -425,7 +425,7 @@ export const TIMELINE_HTML = /* html */ `<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <h1>Checkpoint Timeline</h1>
+  <h1>Checkpoint Timeline <span id="plugin-version" style="font-size:12px;font-weight:normal;color:#656d76;margin-left:8px;"></span></h1>
   <select id="session-select">
     <option value="">Loading sessions...</option>
   </select>
@@ -562,12 +562,10 @@ async function loadTimeline(agentId, sessionId) {
 }
 
 function renderTimelineEvents(events) {
-  // Show newest first
-  const sorted = [...events].reverse();
-
+  // Show oldest first (top-to-bottom chronological order)
   let html = '<div class="timeline">';
-  for (let i = 0; i < sorted.length; i++) {
-    html += renderEventItem(sorted[i], i);
+  for (let i = 0; i < events.length; i++) {
+    html += renderEventItem(events[i], i);
   }
   html += '</div>';
   timelinePanel.innerHTML = html;
@@ -576,7 +574,7 @@ function renderTimelineEvents(events) {
   const items = timelinePanel.querySelectorAll('.timeline-item[data-idx]');
   function activateItem(el) {
     const idx = Number(el.dataset.idx);
-    const ev = sorted[idx];
+    const ev = events[idx];
     if (!ev) return;
     items.forEach(e => e.classList.remove('active'));
     el.classList.add('active');
@@ -1005,6 +1003,10 @@ async function restoreToCheckpoint(checkpointId, scope) {
 }
 
 // ── Init ──
+
+fetch('/api/version').then(r => r.json()).then(d => {
+  document.getElementById('plugin-version').textContent = 'v' + d.version;
+}).catch(() => {});
 
 loadSessions();
 </script>

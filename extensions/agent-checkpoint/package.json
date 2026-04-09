@@ -1,12 +1,10 @@
 {
   "name": "@openclaw/agent-checkpoint",
-  "version": "2026.4.5",
+  "version": "2026.4.9.1103",
   "private": true,
   "description": "Checkpoint and rollback for long-running agent tasks",
   "type": "module",
-  "dependencies": {
-    "@sinclair/typebox": "0.34.49"
-  },
+  "dependencies": {},
   "devDependencies": {
     "openclaw": "workspace:*"
   },

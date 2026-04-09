@@ -1,4 +1,3 @@
-import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry";
 import type { CheckpointEngine } from "./engine.js";
 import { buildContinuationContext } from "./restore-context.js";
@@ -6,24 +5,33 @@ import type { RestoreScope } from "./types.js";
 
 const RESTORE_SCOPES: RestoreScope[] = ["files", "transcript", "all"];
 
-const CheckpointParams = Type.Object({
-  action: Type.Unsafe<"list" | "create" | "restore" | "restore_and_continue">({
-    type: "string",
-    enum: ["list", "create", "restore", "restore_and_continue"],
-    description:
-      "The checkpoint action to perform. Use restore_and_continue to restore and get rich context for continuing the task.",
-  }),
-  checkpoint_id: Type.Optional(Type.String({ description: "Checkpoint ID for restore action." })),
-  scope: Type.Optional(
-    Type.Unsafe<"files" | "transcript" | "all">({
-      type: "string",
+const CheckpointParams = {
+  type: "object" as const,
+  properties: {
+    action: {
+      type: "string" as const,
+      enum: ["list", "create", "restore", "restore_and_continue"],
+      description:
+        "The checkpoint action to perform. Use restore_and_continue to restore and get rich context for continuing the task.",
+    },
+    checkpoint_id: {
+      type: "string" as const,
+      description: "Checkpoint ID for restore action.",
+    },
+    scope: {
+      type: "string" as const,
       enum: ["files", "transcript", "all"],
       description: "Restore scope: files, transcript, or all.",
-    }),
-  ),
-});
+    },
+  },
+  required: ["action"],
+};
 
-type CheckpointArgs = Static<typeof CheckpointParams>;
+type CheckpointArgs = {
+  action?: "list" | "create" | "restore" | "restore_and_continue";
+  checkpoint_id?: string;
+  scope?: "files" | "transcript" | "all";
+};
 
 export function createCheckpointTool(params: {
   engine: CheckpointEngine;

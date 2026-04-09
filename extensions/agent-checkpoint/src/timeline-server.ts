@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
@@ -8,6 +9,9 @@ import { buildContinuationContext } from "./restore-context.js";
 import type { CheckpointStore } from "./store.js";
 import type { CheckpointMeta } from "./types.js";
 import { TIMELINE_HTML } from "./timeline-html.js";
+
+const require = createRequire(import.meta.url);
+const PLUGIN_VERSION: string = (require("../package.json") as { version: string }).version;
 
 /** Unified timeline event for the timeline viewer API. */
 export type TimelineEvent = {
@@ -82,6 +86,12 @@ export async function startTimelineServer(params: TimelineServerParams): Promise
       if (pathname === "/" || pathname === "/index.html") {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(TIMELINE_HTML);
+        return;
+      }
+
+      if (pathname === "/api/version") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ version: PLUGIN_VERSION }));
         return;
       }
 
@@ -219,11 +229,18 @@ function extractText(content: unknown): string {
 }
 
 /** Extract tool call names from a JSONL message content block array. */
-function extractToolCalls(content: unknown): Array<{ name: string; id?: string }> {
+function extractToolCalls(content: unknown): Array<{ name: string; id?: string; input?: string }> {
   if (!Array.isArray(content)) return [];
   return content
     .filter((b: any) => (b?.type === "toolCall" || b?.type === "toolUse") && typeof b.name === "string")
-    .map((b: any) => ({ name: b.name, id: b.id }));
+    .map((b: any) => {
+      const input = b.input ?? b.arguments;
+      return {
+        name: b.name,
+        id: b.id,
+        input: input ? JSON.stringify(input, null, 2) : undefined,
+      };
+    });
 }
 
 /**
@@ -289,7 +306,8 @@ async function readSessionTranscript(agentId: string, sessionId: string): Promis
         events.push({ type: "assistant_reply", seq: seq++, epochMs, timestamp: ts, ...contentPair(text) });
       }
       for (const tool of tools) {
-        events.push({ type: "tool_call", seq: seq++, epochMs, timestamp: ts, content: tool.name, toolName: tool.name });
+        const toolContent = tool.input ? tool.name + "\n" + tool.input : tool.name;
+        events.push({ type: "tool_call", seq: seq++, epochMs, timestamp: ts, ...contentPair(toolContent), toolName: tool.name });
       }
     } else if (msg.role === "toolResult") {
       const text = typeof msg.content === "string" ? msg.content : extractText(msg.content);
