@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { PluginLogger } from "openclaw/plugin-sdk";
@@ -185,14 +186,20 @@ export class CopyBackend implements SnapshotBackend {
       if (!oldFiles.has(file)) {
         changed.push(file);
       } else {
-        // Compare sizes as a fast heuristic
+        // Compare by size first, then by content hash if sizes match
         try {
           const [newStat, oldStat] = await Promise.all([
             fs.stat(path.join(newDir, file)),
             fs.stat(path.join(oldDir, file)),
           ]);
-          if (newStat.size !== oldStat.size || newStat.mtimeMs !== oldStat.mtimeMs) {
+          if (newStat.size !== oldStat.size) {
             changed.push(file);
+          } else {
+            const [newHash, oldHash] = await Promise.all([
+              fileHash(path.join(newDir, file)),
+              fileHash(path.join(oldDir, file)),
+            ]);
+            if (newHash !== oldHash) changed.push(file);
           }
         } catch {
           changed.push(file);
@@ -209,6 +216,11 @@ export class CopyBackend implements SnapshotBackend {
 
     return changed.sort();
   }
+}
+
+async function fileHash(filePath: string): Promise<string> {
+  const data = await fs.readFile(filePath);
+  return createHash("sha256").update(data).digest("hex");
 }
 
 async function assertDirExists(dir: string): Promise<void> {
