@@ -355,6 +355,13 @@ export class CheckpointEngine {
   private async restoreTaskFlowDb(snapshotRef: string): Promise<void> {
     if (!this.taskFlowDbPath) return;
     const dir = this.backend.getSnapshotDir(snapshotRef);
+    const mainBackup = path.join(dir, TASKFLOW_DB_BACKUP_NAME);
+    try {
+      await fs.access(mainBackup);
+    } catch {
+      // No task flow backup in this snapshot — nothing to restore
+      return;
+    }
     for (const suffix of TASKFLOW_DB_SUFFIXES) {
       const src = path.join(dir, TASKFLOW_DB_BACKUP_NAME + suffix);
       const dst = this.taskFlowDbPath + suffix;
@@ -362,9 +369,6 @@ export class CheckpointEngine {
         await fs.copyFile(src, dst);
       } catch {
         // WAL/SHM files may not exist depending on SQLite journal mode
-        if (suffix === "") {
-          this.logger?.warn(`Task flow DB backup not found: ${src}`);
-        }
       }
     }
   }
