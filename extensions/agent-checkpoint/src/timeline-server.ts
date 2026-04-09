@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type { CheckpointEngine } from "./engine.js";
 import type { CheckpointHookState } from "./hooks.js";
+import { buildContinuationContext } from "./restore-context.js";
 import type { CheckpointStore } from "./store.js";
 import type { CheckpointMeta } from "./types.js";
 import { TIMELINE_HTML } from "./timeline-html.js";
@@ -152,18 +153,21 @@ export async function startTimelineServer(params: TimelineServerParams): Promise
           workspaceDir: getWorkspaceDir(),
           scope: scope ?? "files",
         });
-        const cp = result.restoredCheckpoint;
-        const triggerInfo = cp.trigger.type === "before_tool_call" && cp.trigger.toolName
-          ? `Saved before ${cp.trigger.toolName} — tool changes undone.`
-          : undefined;
-        jsonResponse(res, {
-          ok: true,
-          checkpointId: cp.id,
+        const continuation = buildContinuationContext({
+          checkpoint: result.restoredCheckpoint,
+          diff: result.diff,
           scope: result.scope,
           filesRestored: result.filesRestored,
           transcriptRestored: result.transcriptRestored,
-          triggerInfo,
-          hint: "Conversation history is intact. Tell the agent what to do next.",
+        });
+        jsonResponse(res, {
+          ok: true,
+          checkpointId: result.restoredCheckpoint.id,
+          scope: result.scope,
+          filesRestored: result.filesRestored,
+          transcriptRestored: result.transcriptRestored,
+          diff: result.diff,
+          summary: continuation.summary,
         });
         return;
       }

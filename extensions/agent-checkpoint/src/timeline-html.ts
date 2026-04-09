@@ -276,7 +276,7 @@ export const TIMELINE_HTML = /* html */ `<!DOCTYPE html>
     border-radius: 6px;
     padding: 12px;
     border: 1px solid var(--border);
-    max-height: 400px;
+    max-height: 600px;
     overflow-y: auto;
     color: var(--text-muted);
   }
@@ -367,6 +367,33 @@ export const TIMELINE_HTML = /* html */ `<!DOCTYPE html>
   .modal-actions button.confirm:hover { opacity: 0.9; }
   .modal-actions button:hover { border-color: var(--accent); }
 
+  /* Dark mode — follows system preference */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --red: #ff7b72;
+      --orange: #d29922;
+      --timeline-line: #30363d;
+    }
+  }
+
+  /* Diff syntax highlighting */
+  .diff-added { color: var(--green); background: rgba(63,185,80,0.1); display: block; }
+  .diff-removed { color: var(--red); background: rgba(255,123,114,0.1); display: block; }
+  .diff-hunk { color: var(--accent); display: block; }
+
+  /* Tablet */
+  @media (max-width: 1024px) {
+    .timeline-panel { width: 35vw; min-width: 280px; }
+  }
+
+  /* Mobile */
   @media (max-width: 768px) {
     .container { flex-direction: column; }
     .timeline-panel {
@@ -376,6 +403,23 @@ export const TIMELINE_HTML = /* html */ `<!DOCTYPE html>
       border-bottom: 1px solid var(--border);
     }
     .detail-panel { height: 60vh; }
+    header { flex-wrap: wrap; padding: 12px 16px; }
+    header h1 { font-size: 16px; }
+    header select { flex: 1; min-width: 0; font-size: 13px; padding: 8px 10px; }
+    .action-btn { padding: 10px 14px; font-size: 14px; min-height: 44px; }
+    .detail-grid { grid-template-columns: 1fr; }
+    .detail-grid dt { text-align: left; font-weight: 500; }
+    .detail-grid dd { margin-bottom: 8px; }
+    .file-list { max-height: 200px; }
+    .diff-block { max-height: 250px; font-size: 11px; }
+    .timeline-content-preview { max-width: 100%; }
+  }
+
+  @media (max-width: 480px) {
+    header h1 { font-size: 14px; }
+    .action-bar { flex-direction: column; }
+    .action-btn { width: 100%; justify-content: center; }
+    .timeline-content-preview { font-size: 11px; }
   }
 </style>
 </head>
@@ -529,27 +573,43 @@ function renderTimelineEvents(events) {
   timelinePanel.innerHTML = html;
 
   // Click handlers — all items are clickable
-  timelinePanel.querySelectorAll('.timeline-item[data-idx]').forEach(el => {
-    el.addEventListener('click', () => {
-      const idx = Number(el.dataset.idx);
-      const ev = sorted[idx];
-      if (!ev) return;
-      // Update active state
-      timelinePanel.querySelectorAll('.timeline-item').forEach(e => e.classList.remove('active'));
-      el.classList.add('active');
-      if (ev.type === 'checkpoint' && ev.checkpointId) {
-        activeCheckpointId = ev.checkpointId;
-        renderCheckpointDetail(ev.checkpointId);
-      } else {
-        activeCheckpointId = null;
-        renderEventDetail(ev);
-      }
+  const items = timelinePanel.querySelectorAll('.timeline-item[data-idx]');
+  function activateItem(el) {
+    const idx = Number(el.dataset.idx);
+    const ev = sorted[idx];
+    if (!ev) return;
+    items.forEach(e => e.classList.remove('active'));
+    el.classList.add('active');
+    if (ev.type === 'checkpoint' && ev.checkpointId) {
+      activeCheckpointId = ev.checkpointId;
+      renderCheckpointDetail(ev.checkpointId);
+    } else {
+      activeCheckpointId = null;
+      renderEventDetail(ev);
+    }
+  }
+
+  items.forEach((el, i) => {
+    el.setAttribute('tabindex', '0');
+    el.addEventListener('click', () => activateItem(el));
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp' && i > 0) { e.preventDefault(); items[i - 1].focus(); activateItem(items[i - 1]); }
+      else if (e.key === 'ArrowDown' && i < items.length - 1) { e.preventDefault(); items[i + 1].focus(); activateItem(items[i + 1]); }
+      else if (e.key === 'Enter') { activateItem(el); }
     });
   });
+
+  // Auto-select first checkpoint
+  const firstCp = timelinePanel.querySelector('.timeline-item[data-id]');
+  if (firstCp) {
+    firstCp.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    activateItem(firstCp);
+  }
 }
 
 function renderEventItem(ev, idx) {
-  const time = formatTime(ev.timestamp);
+  const time = formatTimeRelative(ev.timestamp);
+  const timeTitle = ev.timestamp;
   const di = ' data-idx="' + idx + '"';
 
   if (ev.type === 'checkpoint') {
@@ -562,7 +622,7 @@ function renderEventItem(ev, idx) {
 
     let html = '<div class="' + cls + '"' + di + ' data-id="' + escapeAttr(ev.checkpointId) + '">';
     html += '<div class="timeline-node"></div>';
-    html += '<div class="timeline-time">' + time + '</div>';
+    html += '<div class="timeline-time" title="' + escapeAttr(timeTitle) + '">' + time + '</div>';
     html += '<div class="timeline-title">' + escapeHtml(ev.content) + '</div>';
     html += '<div class="timeline-meta">';
     if (cp) html += '<span>' + cp.snapshot.filesChanged.length + ' files</span>';
@@ -575,7 +635,7 @@ function renderEventItem(ev, idx) {
   if (ev.type === 'user_message') {
     let html = '<div class="timeline-item user"' + di + '>';
     html += '<div class="timeline-node"></div>';
-    html += '<div class="timeline-time">' + time + '</div>';
+    html += '<div class="timeline-time" title="' + escapeAttr(timeTitle) + '">' + time + '</div>';
     html += '<div class="timeline-title">User</div>';
     html += '<div class="timeline-content-preview">' + escapeHtml(ev.content) + '</div>';
     html += '</div>';
@@ -585,7 +645,7 @@ function renderEventItem(ev, idx) {
   if (ev.type === 'assistant_reply') {
     let html = '<div class="timeline-item assistant"' + di + '>';
     html += '<div class="timeline-node"></div>';
-    html += '<div class="timeline-time">' + time + '</div>';
+    html += '<div class="timeline-time" title="' + escapeAttr(timeTitle) + '">' + time + '</div>';
     html += '<div class="timeline-title">Assistant</div>';
     html += '<div class="timeline-content-preview">' + escapeHtml(ev.content) + '</div>';
     html += '</div>';
@@ -595,7 +655,7 @@ function renderEventItem(ev, idx) {
   if (ev.type === 'tool_call') {
     let html = '<div class="timeline-item tool-call"' + di + '>';
     html += '<div class="timeline-node"></div>';
-    html += '<div class="timeline-time">' + time + '</div>';
+    html += '<div class="timeline-time" title="' + escapeAttr(timeTitle) + '">' + time + '</div>';
     html += '<div class="timeline-title">Tool: ' + escapeHtml(ev.toolName || ev.content) + '</div>';
     html += '</div>';
     return html;
@@ -604,7 +664,7 @@ function renderEventItem(ev, idx) {
   if (ev.type === 'tool_result') {
     let html = '<div class="timeline-item tool-result' + (ev.isError ? ' error' : '') + '"' + di + '>';
     html += '<div class="timeline-node"></div>';
-    html += '<div class="timeline-time">' + time + '</div>';
+    html += '<div class="timeline-time" title="' + escapeAttr(timeTitle) + '">' + time + '</div>';
     html += '<div class="timeline-title">' + (ev.toolName ? ev.toolName + ' ' : '') + 'Result</div>';
     html += '<div class="timeline-content-preview' + (ev.isError ? ' error' : '') + '">' + escapeHtml(ev.content) + '</div>';
     html += '</div>';
@@ -614,7 +674,7 @@ function renderEventItem(ev, idx) {
   if (ev.type === 'session_start') {
     let html = '<div class="timeline-item session-start"' + di + '>';
     html += '<div class="timeline-node"></div>';
-    html += '<div class="timeline-time">' + time + '</div>';
+    html += '<div class="timeline-time" title="' + escapeAttr(timeTitle) + '">' + time + '</div>';
     html += '<div class="timeline-title">Session Started</div>';
     html += '</div>';
     return html;
@@ -623,7 +683,7 @@ function renderEventItem(ev, idx) {
   if (ev.type === 'compaction') {
     let html = '<div class="timeline-item compaction"' + di + '>';
     html += '<div class="timeline-node"></div>';
-    html += '<div class="timeline-time">' + time + '</div>';
+    html += '<div class="timeline-time" title="' + escapeAttr(timeTitle) + '">' + time + '</div>';
     html += '<div class="timeline-title">Context Compacted</div>';
     html += '<div class="timeline-content-preview">' + escapeHtml(ev.content) + '</div>';
     html += '</div>';
@@ -682,6 +742,8 @@ async function renderCheckpointDetail(checkpointId) {
   html += '<div class="action-bar">';
   html += '<button class="action-btn restore" data-restore-id="' + escapeAttr(cp.id) + '" data-scope="files">';
   html += '&#x21A9; Restore Files</button>';
+  html += '<button class="action-btn restore" data-restore-id="' + escapeAttr(cp.id) + '" data-scope="all">';
+  html += '&#x21A9; Restore All</button>';
   html += '</div>';
 
   // Session relations
@@ -729,12 +791,21 @@ async function renderCheckpointDetail(checkpointId) {
   if (cp.snapshot.changeSummary) html += dt('Summary') + dd(cp.snapshot.changeSummary);
   html += '</dl></div>';
 
-  // Files changed
+  // Files changed (paginated for performance)
   if (cp.snapshot.filesChanged.length > 0) {
-    html += '<div class="detail-section"><h3>Files Changed (' + cp.snapshot.filesChanged.length + ')</h3>';
-    html += '<ul class="file-list">';
-    for (const f of cp.snapshot.filesChanged) {
-      html += '<li>' + escapeHtml(f) + '</li>';
+    const filesCount = cp.snapshot.filesChanged.length;
+    const FILE_PAGE_SIZE = 100;
+    const hasMore = filesCount > FILE_PAGE_SIZE;
+    html += '<div class="detail-section"><h3>Files Changed (' + filesCount + ')</h3>';
+    html += '<ul class="file-list" id="file-list">';
+    for (let i = 0; i < Math.min(FILE_PAGE_SIZE, filesCount); i++) {
+      html += '<li>' + escapeHtml(cp.snapshot.filesChanged[i]) + '</li>';
+    }
+    if (hasMore) {
+      html += '<li id="file-list-more" style="padding:8px 0;text-align:center;color:var(--text-muted);font-size:12px;">';
+      html += 'And ' + (filesCount - FILE_PAGE_SIZE) + ' more files ';
+      html += '<button id="file-list-expand" style="margin-left:6px;padding:2px 10px;font-size:11px;cursor:pointer;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--accent);">Show All</button>';
+      html += '</li>';
     }
     html += '</ul></div>';
   }
@@ -754,20 +825,39 @@ async function renderCheckpointDetail(checkpointId) {
   });
 
   // Bind action buttons
-  const restoreBtn = detailPanel.querySelector('[data-restore-id]');
-  if (restoreBtn) {
-    restoreBtn.addEventListener('click', () => {
-      restoreToCheckpoint(restoreBtn.dataset.restoreId, restoreBtn.dataset.scope);
+  detailPanel.querySelectorAll('[data-restore-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      restoreToCheckpoint(btn.dataset.restoreId, btn.dataset.scope);
+    });
+  });
+
+  // Bind file list expand
+  const expandBtn = detailPanel.querySelector('#file-list-expand');
+  if (expandBtn) {
+    expandBtn.addEventListener('click', () => {
+      const moreEl = document.getElementById('file-list-more');
+      if (moreEl) moreEl.remove();
+      const ul = document.getElementById('file-list');
+      if (ul) {
+        const remaining = cp.snapshot.filesChanged.slice(100);
+        for (const f of remaining) {
+          const li = document.createElement('li');
+          li.textContent = f;
+          ul.appendChild(li);
+        }
+      }
     });
   }
-  // Load diff async
+
+  // Load diff async with syntax highlighting
   try {
     const data = await fetchJSON(
       '/api/sessions/' + cp.agentId + '/' + cp.sessionId + '/checkpoints/' + cp.id + '/diff'
     );
     const diffEl = document.getElementById('diff-block');
     if (diffEl && activeCheckpointId === cp.id) {
-      diffEl.textContent = data.diff || '(no diff available)';
+      const diffText = data.diff || '(no diff available)';
+      diffEl.innerHTML = renderDiffHtml(diffText);
     }
   } catch (e) {
     const diffEl = document.getElementById('diff-block');
@@ -807,6 +897,38 @@ function escapeAttr(s) {
 
 function dt(label) { return '<dt>' + label + '</dt>'; }
 function dd(value) { return '<dd>' + escapeHtml(String(value)) + '</dd>'; }
+
+function renderDiffHtml(diffText) {
+  const lines = diffText.split('\\n');
+  let html = '';
+  for (const line of lines) {
+    if (line.startsWith('@@')) {
+      html += '<span class="diff-hunk">' + escapeHtml(line) + '</span>';
+    } else if (line.startsWith('+')) {
+      html += '<span class="diff-added">' + escapeHtml(line) + '</span>';
+    } else if (line.startsWith('-')) {
+      html += '<span class="diff-removed">' + escapeHtml(line) + '</span>';
+    } else {
+      html += escapeHtml(line) + '\\n';
+    }
+  }
+  return html;
+}
+
+function formatTimeRelative(iso) {
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+  if (diff < 0) return formatTime(iso);
+  const mins = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return mins + 'm ago';
+  if (hours < 24) return hours + 'h ago';
+  if (days < 7) return days + 'd ago';
+  return formatTime(iso);
+}
 
 // ── Actions (Restore / Continue) ──
 
@@ -866,13 +988,12 @@ async function restoreToCheckpoint(checkpointId, scope) {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Restore failed');
-        let msg = 'Restored to ' + data.checkpointId;
-        if (data.triggerInfo) msg += ' — ' + data.triggerInfo;
-        if (data.hint) msg += ' ' + data.hint;
+        let msg = 'Restored to ' + data.checkpointId + ' (scope: ' + data.scope + ')';
+        if (data.summary) msg = data.summary.split('\\n')[0];
         showToast(msg, 'success');
-        // Reload checkpoints since later ones were pruned
+        // Reload timeline since later checkpoints were pruned
         if (currentSession) {
-          loadCheckpoints(currentSession.agentId, currentSession.sessionId);
+          loadTimeline(currentSession.agentId, currentSession.sessionId);
         }
       } catch (e) {
         showToast('Restore failed: ' + e.message, 'error');
