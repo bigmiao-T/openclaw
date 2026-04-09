@@ -166,8 +166,10 @@ export class CheckpointEngine {
 
         // Append a restore notice so the dashboard shows it after refresh
         const notice = JSON.stringify({
-          type: "compaction",
-          summary: `[Checkpoint Restore] Rolled back to checkpoint ${checkpointId}. Conversation history has been restored to this point.`,
+          type: "custom_message",
+          customType: "Checkpoint Restore",
+          content: `Rolled back to checkpoint \`${checkpointId}\`. Conversation history has been restored to this point.`,
+          display: true,
           timestamp: new Date().toISOString(),
         });
         await fs.appendFile(newTranscriptPath, "\n" + notice + "\n");

@@ -243,7 +243,7 @@ describe("CheckpointEngine", () => {
       // New file has the original content plus a restore notice
       const restoredContent = await fs.readFile(restoredPath!, "utf8");
       expect(restoredContent).toContain(originalContent.trim());
-      expect(restoredContent).toContain("Checkpoint Restore");
+      expect(restoredContent).toContain("custom_message");
       // Original file is untouched (still compacted)
       const originalNow = await fs.readFile(transcriptPath, "utf8");
       expect(originalNow).toContain("compaction");
@@ -304,7 +304,7 @@ describe("CheckpointEngine", () => {
       expect(restoredTranscriptPath).toBeDefined();
       const restoredContent = await fs.readFile(restoredTranscriptPath!, "utf8");
       expect(restoredContent).toContain(initialTranscript.trim());
-      expect(restoredContent).toContain("Checkpoint Restore");
+      expect(restoredContent).toContain("custom_message");
 
       // Original transcript untouched
       const originalContent = await fs.readFile(transcriptPath, "utf8");
