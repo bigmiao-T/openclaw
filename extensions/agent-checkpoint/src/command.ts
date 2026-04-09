@@ -23,6 +23,7 @@ export function registerCheckpointCommand(
   api: OpenClawPluginApi,
   engine: CheckpointEngine,
   hookState: CheckpointHookState,
+  onTranscriptRestored?: (agentId: string, sessionKey: string, newTranscriptPath: string) => Promise<void>,
 ): void {
   let activeServer: TimelineServer | null = null;
 
@@ -101,8 +102,15 @@ export function registerCheckpointCommand(
             ? scopeArg
             : undefined;
 
+          const sessionTranscriptPath = path.join(
+            os.homedir(), ".openclaw", "agents", found.agentId, "sessions", `${found.sessionId}.jsonl`,
+          );
           const result = await engine.restoreCheckpoint({
             agentId: found.agentId, sessionId: found.sessionId, checkpointId, workspaceDir, scope,
+            sessionTranscriptPath,
+            onTranscriptRestored: onTranscriptRestored
+              ? (newPath) => onTranscriptRestored(found.agentId, found.sessionId, newPath)
+              : undefined,
           });
 
           const continuation = buildContinuationContext({
@@ -158,6 +166,7 @@ export function registerCheckpointCommand(
             store: engine.store,
             hookState,
             port: Number.isFinite(port) ? port : 0,
+            onTranscriptRestored,
           };
           activeServer = await startTimelineServer(timelineParams);
           return { text: `Timeline viewer started at ${activeServer.url}` };

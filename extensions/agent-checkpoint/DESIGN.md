@@ -18,7 +18,7 @@ Long-running agent tasks (code generation, multi-step refactoring, data processi
 ```
 ┌─────────────────────────────────────────────────────┐
 │                   OpenClaw Plugin SDK                │
-│  hooks: after_tool_call, session_start               │
+│  hooks: before_tool_call, session_start               │
 │  tool: checkpoint (list / create / restore)          │
 │  command: /checkpoint (list / create / restore /     │
 │           timeline / timeline-stop)                  │
@@ -82,8 +82,8 @@ Exclude patterns (`.git`, `node_modules`, `.DS_Store`) are `CopyBackend` constru
 The Engine does NOT own queries. `store.listCheckpoints()` and `store.listSessions()` are called directly by tool/command/timeline-server.
 
 Engine only owns operations that require **coordination between backend and store**:
-- `createCheckpoint` — snapshot + metadata + parent chain + prune
-- `restoreCheckpoint` — restore files + truncate transcript + trim manifest
+- `createCheckpoint` — snapshot workspace + copy transcript JSONL + metadata + parent chain
+- `restoreCheckpoint` — restore files + fork transcript to new file + update session store + trim manifest
 - `getCheckpointDiff` — resolve parent from store, delegate diff to backend
 - `pruneOld` — iterate store, delete from both store and backend
 
@@ -111,7 +111,35 @@ Following Ousterhout's principle:
 - Hook failures are **caught and logged** — a checkpoint failure should never crash the agent
 - `restoreSnapshot` **does throw** for missing snapshots — the caller needs to know the restore failed
 
-### 3.6 Metadata Layout
+### 3.6 Transcript Restore — Fork-Based (Core Compaction Pattern)
+
+Transcript restore follows the same pattern as OpenClaw core's compaction checkpoint restore, rather than truncating the live session file.
+
+**Create checkpoint:**
+1. Copy the entire session JSONL file into the snapshot directory as `transcript.jsonl`
+2. Record `messageCount` and `snapshotFile` path in checkpoint metadata
+
+**Restore checkpoint:**
+1. Copy the transcript snapshot to a **new file** in the sessions directory (`{name}.restored-{timestamp}.jsonl`)
+2. Call `onTranscriptRestored` callback → `session-store-bridge.ts` updates the session store:
+   - Set `sessionFile` to the new transcript path
+   - Reset `systemSent = false` (agent re-sends system prompt on next turn)
+   - Reset `abortedLastRun = false`
+3. The original session file is **not modified** — the pointer switch is atomic
+
+**Why fork instead of overwrite:**
+- **Compaction-safe:** If a compaction rewrites the session JSONL between checkpoint creation and restore, the snapshot is still the original pre-compaction content. Overwriting would corrupt the file.
+- **Atomic:** The session store pointer switches to the new file only after the copy succeeds. If the copy fails, the original session is untouched.
+- **Same pattern as core:** Core's `sessions.compaction.restore` uses `SessionManager.forkFrom()` + `updateSessionStore()`. We replicate this via plugin runtime API (`loadSessionStore` / `saveSessionStore`).
+
+```
+Create:  session.jsonl ──copy──→ snapshots/<id>/transcript.jsonl
+
+Restore: snapshots/<id>/transcript.jsonl ──copy──→ session.restored-<ts>.jsonl
+         session store: sessionFile → session.restored-<ts>.jsonl
+```
+
+### 3.7 Metadata Layout
 
 ```
 <storagePath>/
@@ -134,7 +162,7 @@ type CheckpointMeta = {
   agentId: string;
   runId: string;
   trigger: {
-    type: "after_tool_call" | "manual" | "session_start";
+    type: "before_tool_call" | "manual" | "session_start";
     toolName?: string;
     toolCallId?: string;
   };
@@ -146,7 +174,7 @@ type CheckpointMeta = {
   };
   transcript: {
     messageCount: number;
-    byteOffset: number;          // for transcript truncation on restore
+    snapshotFile?: string;       // full copy of session JSONL at checkpoint time
   };
   createdAt: string;             // ISO 8601
   toolDurationMs?: number;
@@ -184,23 +212,24 @@ A local HTTP server serving a single-page dark-themed UI:
 - **Session selector** — tree-structured session browser with parent/child relationships
 - **Timeline** — vertical timeline with color-coded nodes (tool call / manual / session start / error / child session)
 - **Detail panel** — checkpoint metadata, file change list, diff view, and session relation links
-- **Restore button** — roll back workspace files to a selected checkpoint (with confirmation dialog)
-- **Continue button** — one-click restore + agent re-execution via `runtime.subagent.run()`, with SSE-streamed progress panel showing real-time phase updates (restoring → running → done/error)
+- **Restore Files button** — roll back workspace files to a selected checkpoint (with confirmation dialog)
+- **Restore All button** — restore files + fork transcript to new session file + update session store
 - **Responsive** — works on desktop and mobile
 
 API endpoints:
 - `GET /api/sessions` — list all sessions (enriched with checkpoint count, parent/child refs)
+- `GET /api/sessions/:agentId/:sessionId/timeline` — unified timeline (transcript + checkpoints)
 - `GET /api/sessions/:agentId/:sessionId/checkpoints` — list checkpoints
 - `GET /api/sessions/:agentId/:sessionId/checkpoints/:id/diff` — get diff
 - `POST /api/restore` — restore workspace to a checkpoint (body: `{agentId, sessionId, checkpointId, scope}`)
-- `POST /api/continue` — restore + start agent execution (SSE stream; body: `{agentId, sessionId, checkpointId, message?}`)
+- `GET /api/version` — plugin version
 
 ## 6. Auto-Checkpoint Behavior
 
 | Event | Behavior |
 |-------|----------|
 | `session_start` | Create baseline checkpoint (if workspace cached) |
-| `after_tool_call` | Create checkpoint unless tool is in `excludeTools` list |
+| `before_tool_call` | Create checkpoint unless tool is in `excludeTools` list |
 | Manual `/checkpoint create` | Always creates checkpoint |
 
 Default excluded tools: `read`, `glob`, `grep`, `memory_search`, `memory_get` (read-only tools that don't modify workspace).

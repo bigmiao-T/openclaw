@@ -4,7 +4,7 @@ export type TriggerMode = "all_tools" | "mutating_tools" | "manual";
 export type RestoreScope = "files" | "transcript" | "all";
 
 export type CheckpointTrigger = {
-  type: "before_tool_call" | "after_tool_call" | "manual" | "session_start";
+  type: "before_tool_call" | "manual" | "session_start";
   toolName?: string;
   toolCallId?: string;
 };
@@ -19,7 +19,8 @@ export type CheckpointSnapshotState = {
 
 export type CheckpointTranscriptState = {
   messageCount: number;
-  byteOffset: number;
+  /** Path to the snapshot copy of the session JSONL at checkpoint time. */
+  snapshotFile?: string;
 };
 
 export type CheckpointToolResult = {

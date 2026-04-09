@@ -95,7 +95,8 @@ export class CheckpointEngine {
       parentRef,
     });
 
-    const transcript = await getTranscriptState(sessionTranscriptPath);
+    const snapshotDir = this.backend.getSnapshotDir(snapshot.snapshotRef);
+    const transcript = await captureTranscriptSnapshot(sessionTranscriptPath, snapshotDir);
 
     const parentId = manifest.currentHead;
 
@@ -139,6 +140,12 @@ export class CheckpointEngine {
     workspaceDir: string;
     scope?: RestoreScope;
     sessionTranscriptPath?: string;
+    /**
+     * Called after a transcript snapshot is restored to a new file.
+     * The callback should update the session store to point to the new transcript file,
+     * following the same pattern as core compaction checkpoint restore.
+     */
+    onTranscriptRestored?: (newTranscriptPath: string) => Promise<void>;
   }): Promise<RestoreCheckpointResult> {
     const { agentId, sessionId, checkpointId, workspaceDir, sessionTranscriptPath } = params;
     const scope = params.scope ?? this.config.restoreDefaultScope;
@@ -159,8 +166,18 @@ export class CheckpointEngine {
     }
 
     if (scope === "transcript" || scope === "all") {
-      if (sessionTranscriptPath && meta.transcript.byteOffset > 0) {
-        await truncateFile(sessionTranscriptPath, meta.transcript.byteOffset);
+      if (sessionTranscriptPath && meta.transcript.snapshotFile) {
+        // Fork: copy snapshot to a new file in the sessions directory (same as core compaction restore).
+        // This avoids overwriting the live session file and lets the session store pointer switch atomically.
+        const sessionsDir = path.dirname(sessionTranscriptPath);
+        const newFileName = `${path.basename(sessionTranscriptPath, ".jsonl")}.restored-${Date.now()}.jsonl`;
+        const newTranscriptPath = path.join(sessionsDir, newFileName);
+        await fs.copyFile(meta.transcript.snapshotFile, newTranscriptPath);
+
+        if (params.onTranscriptRestored) {
+          // Caller updates the session store to point to the new file
+          await params.onTranscriptRestored(newTranscriptPath);
+        }
         transcriptRestored = true;
       }
     }
@@ -335,7 +352,7 @@ export class CheckpointEngine {
       try {
         await fs.copyFile(src, dst);
       } catch {
-        // Backup may not exist for old checkpoints or WAL/SHM files
+        // WAL/SHM files may not exist depending on SQLite journal mode
         if (suffix === "") {
           this.logger?.warn(`Task flow DB backup not found: ${src}`);
         }
@@ -344,26 +361,27 @@ export class CheckpointEngine {
   }
 }
 
-async function getTranscriptState(
-  transcriptPath?: string,
-): Promise<{ messageCount: number; byteOffset: number }> {
-  if (!transcriptPath) return { messageCount: 0, byteOffset: 0 };
+/**
+ * Capture transcript state by copying the session JSONL file into the snapshot directory.
+ * Follows the same approach as core compaction checkpoints: a full copy ensures
+ * restore works even if the original file is rewritten by compaction.
+ */
+async function captureTranscriptSnapshot(
+  transcriptPath: string | undefined,
+  snapshotDir: string,
+): Promise<{ messageCount: number; snapshotFile?: string }> {
+  if (!transcriptPath) return { messageCount: 0 };
   try {
-    const stat = await fs.stat(transcriptPath);
     const content = await fs.readFile(transcriptPath, "utf8");
     const messageCount = content.split("\n").filter((l) => l.trim().length > 0).length;
-    return { messageCount, byteOffset: stat.size };
-  } catch {
-    return { messageCount: 0, byteOffset: 0 };
-  }
-}
 
-async function truncateFile(filePath: string, byteOffset: number): Promise<void> {
-  const handle = await fs.open(filePath, "r+");
-  try {
-    await handle.truncate(byteOffset);
-  } finally {
-    await handle.close();
+    // Copy entire transcript into the snapshot directory
+    const snapshotFile = path.join(snapshotDir, "transcript.jsonl");
+    await fs.copyFile(transcriptPath, snapshotFile);
+
+    return { messageCount, snapshotFile };
+  } catch {
+    return { messageCount: 0 };
   }
 }
 
@@ -392,7 +410,6 @@ function triggerToAbbr(trigger: CheckpointTrigger): string {
     case "manual":
       return "manual";
     case "before_tool_call":
-    case "after_tool_call":
       return trigger.toolName
         ? trigger.toolName.slice(0, 16).toLowerCase().replace(/[^a-z0-9]/g, "-")
         : "tool";

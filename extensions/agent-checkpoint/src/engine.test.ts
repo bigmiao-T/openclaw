@@ -76,7 +76,7 @@ describe("CheckpointEngine", () => {
         sessionId: "s1",
         runId: "r1",
         workspaceDir,
-        trigger: { type: "after_tool_call", toolName: "Write" },
+        trigger: { type: "before_tool_call", toolName: "Write" },
       });
 
       // ID format: {agent}-{session_prefix}-{seq:03d}-{trigger_abbr}
@@ -120,7 +120,7 @@ describe("CheckpointEngine", () => {
         sessionId: "s1",
         runId: "r1",
         workspaceDir,
-        trigger: { type: "after_tool_call", toolName: "Bash" },
+        trigger: { type: "before_tool_call", toolName: "Bash" },
         toolDurationMs: 1500,
         toolResult: { success: false, errorMessage: "exit code 1" },
       });
@@ -197,6 +197,55 @@ describe("CheckpointEngine", () => {
           workspaceDir,
         }),
       ).rejects.toThrow("not found");
+    });
+
+    it("forks transcript to new file when scope is all (compaction-safe)", async () => {
+      const sessionsDir = path.join(tmpDir, "sessions");
+      await fs.mkdir(sessionsDir, { recursive: true });
+      const transcriptPath = path.join(sessionsDir, "session.jsonl");
+      const line1 = JSON.stringify({ type: "session", timestamp: new Date().toISOString() }) + "\n";
+      const line2 = JSON.stringify({ type: "message", message: { role: "user", content: "hello" } }) + "\n";
+      await fs.writeFile(transcriptPath, line1 + line2);
+      const originalContent = await fs.readFile(transcriptPath, "utf8");
+
+      await writeFile("file.txt", "v1");
+      const cp = await engine.createCheckpoint({
+        agentId: "a1",
+        sessionId: "s1",
+        runId: "r1",
+        workspaceDir,
+        trigger: { type: "manual" },
+        sessionTranscriptPath: transcriptPath,
+      });
+
+      expect(cp.transcript.snapshotFile).toBeDefined();
+
+      // Simulate compaction: completely rewrite the original transcript
+      await fs.writeFile(transcriptPath, '{"type":"compaction","summary":"compacted"}\n');
+
+      let restoredPath: string | undefined;
+      await writeFile("file.txt", "v2");
+      const result = await engine.restoreCheckpoint({
+        agentId: "a1",
+        sessionId: "s1",
+        checkpointId: cp.id,
+        workspaceDir,
+        scope: "all",
+        sessionTranscriptPath: transcriptPath,
+        onTranscriptRestored: async (newPath) => { restoredPath = newPath; },
+      });
+
+      expect(result.transcriptRestored).toBe(true);
+      expect(result.filesRestored).toBe(true);
+      // A new file should have been created (not overwriting the original)
+      expect(restoredPath).toBeDefined();
+      expect(restoredPath).not.toBe(transcriptPath);
+      // New file has the original content
+      const restoredContent = await fs.readFile(restoredPath!, "utf8");
+      expect(restoredContent).toBe(originalContent);
+      // Original file is untouched (still compacted)
+      const originalNow = await fs.readFile(transcriptPath, "utf8");
+      expect(originalNow).toContain("compaction");
     });
   });
 

@@ -8,6 +8,7 @@ import { createPruningService } from "./src/pruning-service.js";
 import { createSnapshotBackend, type BackendType } from "./src/snapshot-backend.js";
 import { CheckpointStore } from "./src/store.js";
 import { createCheckpointTool } from "./src/tool.js";
+import { createTranscriptRestoreHandler } from "./src/session-store-bridge.js";
 
 export default definePluginEntry({
   id: "agent-checkpoint",
@@ -41,6 +42,7 @@ export default definePluginEntry({
     });
 
     const hookState = new CheckpointHookState();
+    const onTranscriptRestored = createTranscriptRestoreHandler(api);
 
     // Auto-checkpoint hooks
     registerCheckpointHooks(api, engine, hookState);
@@ -49,13 +51,13 @@ export default definePluginEntry({
     api.registerTool(
       (ctx) => {
         hookState.cacheWorkspaceDir(ctx);
-        return createCheckpointTool({ engine, context: ctx });
+        return createCheckpointTool({ engine, context: ctx, onTranscriptRestored });
       },
       { name: "checkpoint" },
     );
 
     // /checkpoint slash command
-    registerCheckpointCommand(api, engine, hookState);
+    registerCheckpointCommand(api, engine, hookState, onTranscriptRestored);
 
     // Background pruning service
     api.registerService(createPruningService(engine));

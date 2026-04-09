@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import type { OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry";
 import type { CheckpointEngine } from "./engine.js";
 import { buildContinuationContext } from "./restore-context.js";
@@ -36,6 +38,7 @@ type CheckpointArgs = {
 export function createCheckpointTool(params: {
   engine: CheckpointEngine;
   context: OpenClawPluginToolContext;
+  onTranscriptRestored?: (agentId: string, sessionKey: string, newTranscriptPath: string) => Promise<void>;
 }) {
   const { engine, context } = params;
 
@@ -111,12 +114,19 @@ export function createCheckpointTool(params: {
               ? (rawScope as RestoreScope)
               : undefined;
 
+          const sessionTranscriptPath = path.join(
+            os.homedir(), ".openclaw", "agents", agentId, "sessions", `${sessionId}.jsonl`,
+          );
           const result = await engine.restoreCheckpoint({
             agentId,
             sessionId,
             checkpointId,
             workspaceDir,
             scope,
+            sessionTranscriptPath,
+            onTranscriptRestored: params.onTranscriptRestored
+              ? (newPath) => params.onTranscriptRestored!(agentId, sessionId, newPath)
+              : undefined,
           });
 
           return {
@@ -140,12 +150,19 @@ export function createCheckpointTool(params: {
               ? (rawScope as RestoreScope)
               : undefined;
 
+          const sessionTranscriptPath2 = path.join(
+            os.homedir(), ".openclaw", "agents", agentId, "sessions", `${sessionId}.jsonl`,
+          );
           const result = await engine.restoreCheckpoint({
             agentId,
             sessionId,
             checkpointId,
             workspaceDir,
             scope,
+            sessionTranscriptPath: sessionTranscriptPath2,
+            onTranscriptRestored: params.onTranscriptRestored
+              ? (newPath) => params.onTranscriptRestored!(agentId, sessionId, newPath)
+              : undefined,
           });
 
           const continuation = buildContinuationContext({

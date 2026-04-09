@@ -46,6 +46,8 @@ export type TimelineServerParams = {
   hookState: CheckpointHookState;
   port?: number;
   hostname?: string;
+  /** Called after transcript restore to update session store with new file path. */
+  onTranscriptRestored?: (agentId: string, sessionKey: string, newTranscriptPath: string) => Promise<void>;
 };
 
 export type TimelineServer = {
@@ -156,12 +158,20 @@ export async function startTimelineServer(params: TimelineServerParams): Promise
           res.end(JSON.stringify({ error: "Missing agentId, sessionId, or checkpointId" }));
           return;
         }
+        const sessionTranscriptPath = path.join(
+          os.homedir(), ".openclaw", "agents", agentId, "sessions", `${sessionId}.jsonl`,
+        );
+        const onTranscriptRestoredCb = params.onTranscriptRestored;
         const result = await engine.restoreCheckpoint({
           agentId,
           sessionId,
           checkpointId,
           workspaceDir: getWorkspaceDir(),
-          scope: scope ?? "files",
+          scope: scope ?? "all",
+          sessionTranscriptPath,
+          onTranscriptRestored: onTranscriptRestoredCb
+            ? (newPath) => onTranscriptRestoredCb(agentId, sessionId, newPath)
+            : undefined,
         });
         const continuation = buildContinuationContext({
           checkpoint: result.restoredCheckpoint,

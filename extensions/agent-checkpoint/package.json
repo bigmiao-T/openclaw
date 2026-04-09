@@ -1,6 +1,6 @@
 {
   "name": "@openclaw/agent-checkpoint",
-  "version": "2026.4.9.1131",
+  "version": "2026.4.9.1249",
   "private": true,
   "description": "Checkpoint and rollback for long-running agent tasks",
   "type": "module",

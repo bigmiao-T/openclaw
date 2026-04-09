@@ -785,7 +785,7 @@ async function renderCheckpointDetail(checkpointId) {
     if (cp.toolResult.errorMessage) html += dt('Error') + dd(cp.toolResult.errorMessage);
   }
   html += dt('Transcript Msgs') + dd(String(cp.transcript.messageCount));
-  html += dt('Transcript Bytes') + dd(formatBytes(cp.transcript.byteOffset));
+  if (cp.transcript.snapshotFile) html += dt('Transcript Snapshot') + dd('&#10003;');
   if (cp.snapshot.changeSummary) html += dt('Summary') + dd(cp.snapshot.changeSummary);
   html += '</dl></div>';
 
@@ -876,13 +876,6 @@ function formatDuration(ms) {
   return (ms / 1000).toFixed(1) + 's';
 }
 
-function formatBytes(b) {
-  if (b === 0) return '0 B';
-  if (b < 1024) return b + ' B';
-  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
-  return (b / (1024 * 1024)).toFixed(1) + ' MB';
-}
-
 function escapeHtml(s) {
   const el = document.createElement('span');
   el.textContent = s;
@@ -969,7 +962,7 @@ async function restoreToCheckpoint(checkpointId, scope) {
     'Restore workspace to <strong>' + escapeHtml(checkpointId) + '</strong>?<br>' +
     'Scope: <strong>' + escapeHtml(scope) + '</strong><br><br>' +
     'This will overwrite current workspace files with the snapshot from this checkpoint.' +
-    (scope === 'all' ? ' Transcript will also be truncated.' : ''),
+    (scope === 'all' ? ' Transcript will be restored from snapshot.' : ''),
     async () => {
       const btns = detailPanel.querySelectorAll('.action-btn');
       btns.forEach(b => b.disabled = true);

@@ -18,7 +18,7 @@
 ```
 ┌─────────────────────────────────────────────────────┐
 │                   OpenClaw Plugin SDK                │
-│  hooks: after_tool_call, session_start               │
+│  hooks: before_tool_call, session_start               │
 │  tool: checkpoint (list / create / restore)          │
 │  command: /checkpoint (list / create / restore /     │
 │           timeline / timeline-stop)                  │
@@ -83,8 +83,8 @@ interface SnapshotBackend {
 Engine **不拥有**查询操作。`store.listCheckpoints()` 和 `store.listSessions()` 由 tool/command/timeline-server 直接调用。
 
 Engine 只拥有需要 **协调 backend 和 store** 的操作：
-- `createCheckpoint` — 快照 + 元数据 + parent 链 + 清理
-- `restoreCheckpoint` — 恢复文件 + 截断对话记录 + 裁剪 manifest
+- `createCheckpoint` — 快照工作区 + 拷贝 transcript JSONL + 元数据 + parent 链
+- `restoreCheckpoint` — 恢复文件 + fork transcript 到新文件 + 更新 session store + 裁剪 manifest
 - `getCheckpointDiff` — 从 store 解析 parent，委托 backend 做 diff
 - `pruneOld` — 遍历 store，同时删除 store 和 backend 数据
 
@@ -114,7 +114,35 @@ export function getCachedWorkspaceDir(agentId) { ... }
 | Hook 中创建检查点失败 | **捕获并记录日志** | 检查点失败不应导致 Agent 崩溃 |
 | `restoreSnapshot` 快照不存在 | **抛异常** | 调用者需要知道恢复失败了 |
 
-### 3.6 元数据存储布局
+### 3.6 Transcript 恢复 — 基于 Fork 的机制（对齐 Core Compaction 模式）
+
+Transcript 恢复采用与 OpenClaw core compaction checkpoint restore 相同的模式，而非截断当前 session 文件。
+
+**创建 checkpoint 时：**
+1. 将完整 session JSONL 文件拷贝到快照目录，保存为 `transcript.jsonl`
+2. 在 checkpoint 元数据中记录 `messageCount` 和 `snapshotFile` 路径
+
+**恢复 checkpoint 时：**
+1. 将 transcript 快照拷贝为 sessions 目录下的**新文件**（`{name}.restored-{timestamp}.jsonl`）
+2. 调用 `onTranscriptRestored` 回调 → `session-store-bridge.ts` 更新 session store：
+   - 设置 `sessionFile` 指向新 transcript 文件
+   - 重置 `systemSent = false`（agent 在下次对话时重发 system prompt）
+   - 重置 `abortedLastRun = false`
+3. 原始 session 文件**不会被修改** — 指针切换是原子的
+
+**为什么用 fork 而非覆盖：**
+- **Compaction 安全：** 如果在 checkpoint 创建和恢复之间发生了 compaction（session JSONL 被重写），快照仍是原始的 pre-compaction 内容。直接覆盖会导致文件损坏。
+- **原子性：** session store 指针仅在拷贝成功后才切换。如果拷贝失败，原始 session 不受影响。
+- **与 Core 一致：** Core 的 `sessions.compaction.restore` 使用 `SessionManager.forkFrom()` + `updateSessionStore()`。我们通过 plugin runtime API（`loadSessionStore` / `saveSessionStore`）复制相同模式。
+
+```
+创建：  session.jsonl ──拷贝──→ snapshots/<id>/transcript.jsonl
+
+恢复：  snapshots/<id>/transcript.jsonl ──拷贝──→ session.restored-<ts>.jsonl
+        session store: sessionFile → session.restored-<ts>.jsonl
+```
+
+### 3.7 元数据存储布局
 
 ```
 <storagePath>/
@@ -137,7 +165,7 @@ type CheckpointMeta = {
   agentId: string;
   runId: string;
   trigger: {
-    type: "after_tool_call" | "manual" | "session_start";
+    type: "before_tool_call" | "manual" | "session_start";
     toolName?: string;           // 触发检查点的工具名称
     toolCallId?: string;
   };
@@ -149,7 +177,7 @@ type CheckpointMeta = {
   };
   transcript: {
     messageCount: number;        // 对话消息数
-    byteOffset: number;          // 用于恢复时截断对话记录
+    snapshotFile?: string;       // checkpoint 时 session JSONL 的完整拷贝
   };
   createdAt: string;             // ISO 8601
   toolDurationMs?: number;       // 工具执行耗时
@@ -190,23 +218,24 @@ type CheckpointMeta = {
 - **会话选择器** — 树形结构浏览所有 Agent 会话，展示父子关系
 - **时间线** — 纵向时间线，用不同颜色节点区分类型（工具调用 / 手动 / 会话启动 / 错误 / 子会话）
 - **详情面板** — 检查点元数据、文件变更列表、diff 视图、会话关系导航链接
-- **恢复按钮** — 一键回滚工作区文件到指定检查点（带确认弹窗）
-- **继续执行按钮** — 一键恢复 + 通过 `runtime.subagent.run()` 重新启动 Agent 执行，SSE 流式推送实时进度（恢复中 → 执行中 → 完成/失败）
+- **Restore Files 按钮** — 仅回滚工作区文件到指定检查点（带确认弹窗）
+- **Restore All 按钮** — 恢复文件 + fork transcript 到新 session 文件 + 更新 session store
 - **响应式布局** — 适配桌面和手机
 
 API 端点：
 - `GET /api/sessions` — 列出所有会话（含检查点数量、父子关系）
+- `GET /api/sessions/:agentId/:sessionId/timeline` — 统一时间线（transcript + checkpoints 合并）
 - `GET /api/sessions/:agentId/:sessionId/checkpoints` — 列出检查点
 - `GET /api/sessions/:agentId/:sessionId/checkpoints/:id/diff` — 获取 diff
 - `POST /api/restore` — 恢复工作区到指定检查点（body: `{agentId, sessionId, checkpointId, scope}`）
-- `POST /api/continue` — 恢复 + 启动 Agent 继续执行（SSE 流；body: `{agentId, sessionId, checkpointId, message?}`）
+- `GET /api/version` — 插件版本号
 
 ## 6. 自动检查点行为
 
 | 事件 | 行为 |
 |------|------|
 | `session_start` | 创建基线检查点（前提：工作区已缓存） |
-| `after_tool_call` | 创建检查点，除非工具在 `excludeTools` 列表中 |
+| `before_tool_call` | 创建检查点，除非工具在 `excludeTools` 列表中 |
 | 手动 `/checkpoint create` | 始终创建检查点 |
 
 默认排除的工具：`read`、`glob`、`grep`、`memory_search`、`memory_get`（只读工具，不修改工作区）。

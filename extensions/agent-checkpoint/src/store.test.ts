@@ -32,7 +32,7 @@ describe("CheckpointStore", () => {
         filesChanged: ["a.txt"],
         changeSummary: "1 file(s) (initial)",
       },
-      transcript: overrides.transcript ?? { messageCount: 0, byteOffset: 0 },
+      transcript: overrides.transcript ?? { messageCount: 0 },
       createdAt: overrides.createdAt ?? new Date().toISOString(),
       ...("toolDurationMs" in overrides ? { toolDurationMs: overrides.toolDurationMs } : {}),
       ...("toolResult" in overrides ? { toolResult: overrides.toolResult } : {}),

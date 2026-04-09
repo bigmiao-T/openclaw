@@ -16,7 +16,7 @@ function makeCheckpointMeta(overrides?: Partial<CheckpointMeta>): CheckpointMeta
       filesChanged: ["src/index.ts", "src/utils.ts"],
       changeSummary: "2 files changed",
     },
-    transcript: { messageCount: 42, byteOffset: 8192 },
+    transcript: { messageCount: 42 },
     createdAt: "2026-04-09T10:00:00.000Z",
     ...overrides,
   };
