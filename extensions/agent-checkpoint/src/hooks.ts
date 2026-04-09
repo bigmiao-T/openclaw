@@ -62,6 +62,7 @@ export function registerCheckpointHooks(
   api: OpenClawPluginApi,
   engine: CheckpointEngine,
   state: CheckpointHookState,
+  resolveTranscriptPath?: (agentId: string, sessionId: string) => string,
 ): void {
   // Cache workspaceDir from agent context — fires before session_start,
   // so sub-agents have their workspaceDir ready for the baseline checkpoint.
@@ -92,7 +93,9 @@ export function registerCheckpointHooks(
           toolName,
           toolCallId: (context as any).toolCallId,
         },
-        sessionTranscriptPath: sessionTranscriptPath(ctx.agentId, ctx.sessionId),
+        sessionTranscriptPath: resolveTranscriptPath
+          ? resolveTranscriptPath(ctx.agentId, ctx.sessionId)
+          : sessionTranscriptPath(ctx.agentId, ctx.sessionId),
       });
       await engine.pruneExcess(ctx.agentId, ctx.sessionId);
     } catch (error) {
@@ -119,7 +122,9 @@ export function registerCheckpointHooks(
         runId: "",
         workspaceDir,
         trigger: { type: "session_start" },
-        sessionTranscriptPath: sessionTranscriptPath(agentId, sessionId),
+        sessionTranscriptPath: resolveTranscriptPath
+          ? resolveTranscriptPath(agentId, sessionId)
+          : sessionTranscriptPath(agentId, sessionId),
       });
     } catch (error) {
       api.logger?.warn(`Baseline checkpoint failed: ${String(error)}`);

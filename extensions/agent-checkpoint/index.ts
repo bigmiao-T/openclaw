@@ -42,7 +42,7 @@ export default definePluginEntry({
     const onTranscriptRestored = createTranscriptRestoreHandler(api);
 
     // Auto-checkpoint hooks
-    registerCheckpointHooks(api, engine, hookState);
+    registerCheckpointHooks(api, engine, hookState, resolveTranscriptPath);
 
     // Agent tool (also caches workspaceDir for hooks)
     api.registerTool(
