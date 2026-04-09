@@ -47,7 +47,7 @@ export type TimelineServerParams = {
   port?: number;
   hostname?: string;
   /** Called after transcript restore to update session store with new file path. */
-  onTranscriptRestored?: (agentId: string, sessionKey: string, newTranscriptPath: string) => Promise<void>;
+  onTranscriptRestored?: (agentId: string, sessionId: string, newTranscriptPath: string) => Promise<void>;
 };
 
 export type TimelineServer = {

@@ -112,7 +112,7 @@ Agent: Let me check available checkpoints
 | Scope | Effect |
 |-------|--------|
 | `files` | Workspace files restored to checkpoint state; transcript preserved (agent remembers what happened) |
-| `transcript` | Transcript truncated to checkpoint moment; files unchanged |
+| `transcript` | Transcript restored from checkpoint snapshot to a new session file; files unchanged |
 | `all` | Both files and transcript restored (fully return to that point in time) |
 
 ---

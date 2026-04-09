@@ -38,7 +38,7 @@ type CheckpointArgs = {
 export function createCheckpointTool(params: {
   engine: CheckpointEngine;
   context: OpenClawPluginToolContext;
-  onTranscriptRestored?: (agentId: string, sessionKey: string, newTranscriptPath: string) => Promise<void>;
+  onTranscriptRestored?: (agentId: string, sessionId: string, newTranscriptPath: string) => Promise<void>;
 }) {
   const { engine, context } = params;
 
@@ -181,7 +181,7 @@ export function createCheckpointTool(params: {
 
         default:
           return {
-            content: [{ type: "text" as const, text: `Unknown action: ${action}. Valid: list, create, restore.` }],
+            content: [{ type: "text" as const, text: `Unknown action: ${action}. Valid: list, create, restore, restore_and_continue.` }],
             details: { action, error: true },
           };
       }

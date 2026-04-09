@@ -24,7 +24,7 @@ export function registerCheckpointCommand(
   api: OpenClawPluginApi,
   engine: CheckpointEngine,
   hookState: CheckpointHookState,
-  onTranscriptRestored?: (agentId: string, sessionKey: string, newTranscriptPath: string) => Promise<void>,
+  onTranscriptRestored?: (agentId: string, sessionId: string, newTranscriptPath: string) => Promise<void>,
 ): void {
   let activeServer: TimelineServer | null = null;
 
