@@ -38,6 +38,7 @@ type CheckpointArgs = {
 export function createCheckpointTool(params: {
   engine: CheckpointEngine;
   context: OpenClawPluginToolContext;
+  resolveTranscriptPath?: (agentId: string, sessionId: string) => string;
   onTranscriptRestored?: (agentId: string, sessionId: string, newTranscriptPath: string) => Promise<void>;
 }) {
   const { engine, context } = params;
@@ -114,9 +115,9 @@ export function createCheckpointTool(params: {
               ? (rawScope as RestoreScope)
               : undefined;
 
-          const sessionTranscriptPath = path.join(
-            os.homedir(), ".openclaw", "agents", agentId, "sessions", `${sessionId}.jsonl`,
-          );
+          const sessionTranscriptPath = params.resolveTranscriptPath
+            ? params.resolveTranscriptPath(agentId, sessionId)
+            : path.join(os.homedir(), ".openclaw", "agents", agentId, "sessions", `${sessionId}.jsonl`);
           const result = await engine.restoreCheckpoint({
             agentId,
             sessionId,
@@ -150,9 +151,9 @@ export function createCheckpointTool(params: {
               ? (rawScope as RestoreScope)
               : undefined;
 
-          const sessionTranscriptPath2 = path.join(
-            os.homedir(), ".openclaw", "agents", agentId, "sessions", `${sessionId}.jsonl`,
-          );
+          const sessionTranscriptPath2 = params.resolveTranscriptPath
+            ? params.resolveTranscriptPath(agentId, sessionId)
+            : path.join(os.homedir(), ".openclaw", "agents", agentId, "sessions", `${sessionId}.jsonl`);
           const result = await engine.restoreCheckpoint({
             agentId,
             sessionId,

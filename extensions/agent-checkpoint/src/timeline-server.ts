@@ -46,6 +46,8 @@ export type TimelineServerParams = {
   hookState: CheckpointHookState;
   port?: number;
   hostname?: string;
+  /** Resolve the actual transcript file path from session store. */
+  resolveTranscriptPath?: (agentId: string, sessionId: string) => string;
   /** Called after transcript restore to update session store with new file path. */
   onTranscriptRestored?: (agentId: string, sessionId: string, newTranscriptPath: string) => Promise<void>;
 };
@@ -120,7 +122,7 @@ export async function startTimelineServer(params: TimelineServerParams): Promise
         const agentId = timelineMatch[1]!;
         const sessionId = decodeURIComponent(timelineMatch[2]!);
         const [transcriptEvents, checkpoints] = await Promise.all([
-          readSessionTranscript(agentId, sessionId),
+          readSessionTranscript(agentId, sessionId, params.resolveTranscriptPath),
           store.listCheckpoints(agentId, sessionId),
         ]);
         const timeline = buildTimeline(transcriptEvents, checkpoints);
@@ -158,9 +160,9 @@ export async function startTimelineServer(params: TimelineServerParams): Promise
           res.end(JSON.stringify({ error: "Missing agentId, sessionId, or checkpointId" }));
           return;
         }
-        const sessionTranscriptPath = path.join(
-          os.homedir(), ".openclaw", "agents", agentId, "sessions", `${sessionId}.jsonl`,
-        );
+        const sessionTranscriptPath = params.resolveTranscriptPath
+          ? params.resolveTranscriptPath(agentId, sessionId)
+          : defaultTranscriptPath(agentId, sessionId);
         const onTranscriptRestoredCb = params.onTranscriptRestored;
         const result = await engine.restoreCheckpoint({
           agentId,
@@ -253,13 +255,23 @@ function extractToolCalls(content: unknown): Array<{ name: string; id?: string; 
     });
 }
 
+/** Default transcript path when no session store resolver is available. */
+function defaultTranscriptPath(agentId: string, sessionId: string): string {
+  return path.join(os.homedir(), ".openclaw", "agents", agentId, "sessions", `${sessionId}.jsonl`);
+}
+
 /**
  * Read a session JSONL transcript and extract timeline events.
- * Path: ~/.openclaw/agents/{agentId}/sessions/{sessionId}.jsonl
+ * Uses resolveTranscriptPath to honor session store's sessionFile pointer.
  */
-async function readSessionTranscript(agentId: string, sessionId: string): Promise<TimelineEvent[]> {
-  const sessionsDir = path.join(os.homedir(), ".openclaw", "agents", agentId, "sessions");
-  const transcriptPath = path.join(sessionsDir, `${sessionId}.jsonl`);
+async function readSessionTranscript(
+  agentId: string,
+  sessionId: string,
+  resolveTranscriptPath?: (agentId: string, sessionId: string) => string,
+): Promise<TimelineEvent[]> {
+  const transcriptPath = resolveTranscriptPath
+    ? resolveTranscriptPath(agentId, sessionId)
+    : defaultTranscriptPath(agentId, sessionId);
 
   let raw: string;
   try {

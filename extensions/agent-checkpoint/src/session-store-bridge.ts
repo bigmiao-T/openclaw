@@ -1,4 +1,29 @@
+import os from "node:os";
+import path from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
+
+/**
+ * Resolve the actual transcript file path for a session.
+ * Reads from session store (honors restored sessionFile pointer),
+ * falls back to the default path if no entry is found.
+ */
+export function createTranscriptPathResolver(
+  api: OpenClawPluginApi,
+): (agentId: string, sessionId: string) => string {
+  return (agentId: string, sessionId: string): string => {
+    const { resolveStorePath, loadSessionStore } = api.runtime.agent.session;
+    const storePath = resolveStorePath(api.config.session?.store);
+    const store = loadSessionStore(storePath);
+
+    for (const entry of Object.values(store)) {
+      if (entry.sessionId === sessionId && entry.sessionFile) {
+        return entry.sessionFile;
+      }
+    }
+    // Default path
+    return path.join(os.homedir(), ".openclaw", "agents", agentId, "sessions", `${sessionId}.jsonl`);
+  };
+}
 
 /**
  * Creates a callback that updates the session store when a transcript is restored
