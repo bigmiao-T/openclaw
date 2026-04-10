@@ -779,11 +779,6 @@ async function renderCheckpointDetail(checkpointId) {
   html += dt('Parent CP') + dd(cp.parentId || '(none)');
   html += dt('Backend') + dd(cp.snapshot.backendType);
   html += dt('Snapshot Ref') + dd(cp.snapshot.snapshotRef);
-  if (cp.toolDurationMs != null) html += dt('Duration') + dd(formatDuration(cp.toolDurationMs));
-  if (cp.toolResult) {
-    html += dt('Tool Result') + dd(cp.toolResult.success ? 'success' : 'failed');
-    if (cp.toolResult.errorMessage) html += dt('Error') + dd(cp.toolResult.errorMessage);
-  }
   html += dt('Transcript Msgs') + dd(String(cp.transcript.messageCount));
   if (cp.transcript.snapshotFile) html += dt('Transcript Snapshot') + dd('&#10003;');
   if (cp.snapshot.changeSummary) html += dt('Summary') + dd(cp.snapshot.changeSummary);
@@ -869,11 +864,6 @@ function formatTime(iso) {
   const d = new Date(iso);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     + ' ' + d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-}
-
-function formatDuration(ms) {
-  if (ms < 1000) return ms + 'ms';
-  return (ms / 1000).toFixed(1) + 's';
 }
 
 function escapeHtml(s) {

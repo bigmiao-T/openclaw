@@ -72,8 +72,7 @@ export function registerCheckpointCommand(
 
           const lines = checkpoints.map((cp) => {
             const tool = cp.trigger.toolName ? ` [${cp.trigger.toolName}]` : "";
-            const err = cp.toolResult?.success === false ? " \u274c" : "";
-            return `\`${cp.id}\` ${cp.createdAt}${tool}${err} — ${cp.snapshot.filesChanged.length} files`;
+            return `\`${cp.id}\` ${cp.createdAt}${tool} — ${cp.snapshot.filesChanged.length} files`;
           });
           return { text: `**Checkpoints (${checkpoints.length})**\n${lines.join("\n")}` };
         }

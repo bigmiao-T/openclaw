@@ -34,8 +34,6 @@ describe("CheckpointStore", () => {
       },
       transcript: overrides.transcript ?? { messageCount: 0 },
       createdAt: overrides.createdAt ?? new Date().toISOString(),
-      ...("toolDurationMs" in overrides ? { toolDurationMs: overrides.toolDurationMs } : {}),
-      ...("toolResult" in overrides ? { toolResult: overrides.toolResult } : {}),
     };
   }
 

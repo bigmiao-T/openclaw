@@ -23,11 +23,6 @@ export type CheckpointTranscriptState = {
   snapshotFile?: string;
 };
 
-export type CheckpointToolResult = {
-  success: boolean;
-  errorMessage?: string;
-};
-
 export type CheckpointMeta = {
   id: CheckpointId;
   parentId: CheckpointId | null;
@@ -38,8 +33,6 @@ export type CheckpointMeta = {
   snapshot: CheckpointSnapshotState;
   transcript: CheckpointTranscriptState;
   createdAt: string;
-  toolDurationMs?: number;
-  toolResult?: CheckpointToolResult;
 };
 
 export type SessionRef = {

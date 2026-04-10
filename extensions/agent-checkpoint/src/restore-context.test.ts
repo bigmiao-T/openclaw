@@ -49,21 +49,6 @@ describe("buildContinuationContext", () => {
     expect(result.summary).toContain("`Bash`");
   });
 
-  it("indicates failed tool with error message", () => {
-    const result = buildContinuationContext({
-      checkpoint: makeCheckpointMeta({
-        toolResult: { success: false, errorMessage: "Permission denied" },
-      }),
-      scope: "all",
-      filesRestored: true,
-      transcriptRestored: true,
-    });
-
-    expect(result.agentPrompt).toContain("**failed**");
-    expect(result.agentPrompt).toContain("Permission denied");
-    expect(result.agentPrompt).toContain("different approach");
-  });
-
   it("includes diff when provided", () => {
     const diff = "--- a/src/index.ts\n+++ b/src/index.ts\n-old line\n+new line";
     const result = buildContinuationContext({

@@ -75,8 +75,7 @@ export function createCheckpointTool(params: {
 
           const lines = checkpoints.map((cp) => {
             const toolInfo = cp.trigger.toolName ? ` [${cp.trigger.toolName}]` : "";
-            const status = cp.toolResult?.success === false ? " (ERROR)" : "";
-            return `- ${cp.id} | ${cp.createdAt}${toolInfo}${status} | ${cp.snapshot.filesChanged.length} files`;
+            return `- ${cp.id} | ${cp.createdAt}${toolInfo} | ${cp.snapshot.filesChanged.length} files`;
           });
 
           return {

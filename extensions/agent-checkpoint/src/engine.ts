@@ -17,8 +17,6 @@ export type CreateCheckpointParams = {
   runId: string;
   workspaceDir: string;
   trigger: CheckpointTrigger;
-  toolDurationMs?: number;
-  toolResult?: { success: boolean; errorMessage?: string };
   sessionTranscriptPath?: string;
 };
 
@@ -65,8 +63,7 @@ export class CheckpointEngine {
 
   async createCheckpoint(params: CreateCheckpointParams): Promise<CheckpointMeta> {
     const {
-      agentId, sessionId, runId, workspaceDir, trigger,
-      toolDurationMs, toolResult, sessionTranscriptPath,
+      agentId, sessionId, runId, workspaceDir, trigger, sessionTranscriptPath,
     } = params;
 
     const sessionKey = `${agentId}:${sessionId}`;
@@ -108,8 +105,6 @@ export class CheckpointEngine {
       },
       transcript,
       createdAt: new Date().toISOString(),
-      toolDurationMs,
-      toolResult,
     };
 
     await this.store.saveCheckpoint(meta);

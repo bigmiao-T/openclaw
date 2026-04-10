@@ -112,23 +112,6 @@ describe("CheckpointEngine", () => {
       expect(cp2.parentId).toBe(cp1.id);
     });
 
-    it("stores toolDurationMs and toolResult", async () => {
-      await writeFile("x.txt", "data");
-
-      const meta = await engine.createCheckpoint({
-        agentId: "a1",
-        sessionId: "s1",
-        runId: "r1",
-        workspaceDir,
-        trigger: { type: "before_tool_call", toolName: "Bash" },
-        toolDurationMs: 1500,
-        toolResult: { success: false, errorMessage: "exit code 1" },
-      });
-
-      expect(meta.toolDurationMs).toBe(1500);
-      expect(meta.toolResult?.success).toBe(false);
-      expect(meta.toolResult?.errorMessage).toBe("exit code 1");
-    });
   });
 
   describe("restoreCheckpoint", () => {

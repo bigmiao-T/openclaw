@@ -67,14 +67,7 @@ export function buildContinuationContext(params: {
     promptParts.push("");
     promptParts.push(`### Undone Tool: \`${trigger.toolName}\``);
 
-    if (cp.toolResult?.success === false) {
-      promptParts.push(
-        `This tool **failed** previously${cp.toolResult.errorMessage ? ` with: ${cp.toolResult.errorMessage}` : "."}`
-      );
-      promptParts.push("Consider using a different approach or fixing the root cause before retrying.");
-    } else {
-      promptParts.push("This tool's effects have been reversed. The workspace is now in the state from before that tool ran.");
-    }
+    promptParts.push("This tool's effects have been reversed. The workspace is now in the state from before that tool ran.");
   }
 
   if (filesCount > 0) {
