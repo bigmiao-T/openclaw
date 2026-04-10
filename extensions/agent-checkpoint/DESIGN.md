@@ -130,7 +130,7 @@ Transcript restore follows the same pattern as OpenClaw core's compaction checkp
 **Why fork instead of overwrite:**
 - **Compaction-safe:** If a compaction rewrites the session JSONL between checkpoint creation and restore, the snapshot is still the original pre-compaction content. Overwriting would corrupt the file.
 - **Atomic:** The session store pointer switches to the new file only after the copy succeeds. If the copy fails, the original session is untouched.
-- **Same pattern as core:** Core's `sessions.compaction.restore` uses `SessionManager.forkFrom()` + `updateSessionStore()`. We replicate this via plugin runtime API (`loadSessionStore` / `saveSessionStore`).
+- **Inspired by core, not identical:** Core's `sessions.compaction.restore` uses `SessionManager.forkFrom()` which generates a new `sessionId` — because core's use case is "branch" (original session continues to exist alongside the fork). Our use case is "rollback within the same session", so we keep the same `sessionId` and only swap the `sessionFile` pointer. Changing `sessionId` would break checkpoint metadata indexing (`meta/<agentId>/<sessionId>/`). We also cannot import `SessionManager` from the plugin boundary (`@mariozechner/pi-coding-agent` is a core-only dependency).
 
 ```
 Create:  session.jsonl ──copy──→ snapshots/<id>/transcript.jsonl

@@ -133,7 +133,7 @@ Transcript 恢复采用与 OpenClaw core compaction checkpoint restore 相同的
 **为什么用 fork 而非覆盖：**
 - **Compaction 安全：** 如果在 checkpoint 创建和恢复之间发生了 compaction（session JSONL 被重写），快照仍是原始的 pre-compaction 内容。直接覆盖会导致文件损坏。
 - **原子性：** session store 指针仅在拷贝成功后才切换。如果拷贝失败，原始 session 不受影响。
-- **与 Core 一致：** Core 的 `sessions.compaction.restore` 使用 `SessionManager.forkFrom()` + `updateSessionStore()`。我们通过 plugin runtime API（`loadSessionStore` / `saveSessionStore`）复制相同模式。
+- **借鉴 Core 但非完全相同：** Core 的 `sessions.compaction.restore` 使用 `SessionManager.forkFrom()` 会生成新的 `sessionId` — 因为 core 的场景是"分支"（原 session 继续存在）。我们的场景是"同 session 内回滚"，因此保持 `sessionId` 不变，只切换 `sessionFile` 指针。更改 `sessionId` 会导致 checkpoint 元数据索引（`meta/<agentId>/<sessionId>/`）失效。此外，plugin boundary 限制不允许导入 `SessionManager`（`@mariozechner/pi-coding-agent` 是 core 专属依赖）。
 
 ```
 创建：  session.jsonl ──拷贝──→ snapshots/<id>/transcript.jsonl
