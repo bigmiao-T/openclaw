@@ -88,6 +88,7 @@ export function registerCheckpointCommand(
             workspaceDir,
             trigger: { type: "manual", toolName: label },
           });
+          if (!meta) return { text: "Checkpoint skipped — no files changed." };
           return { text: `Checkpoint created: \`${meta.id}\` (${meta.snapshot.filesChanged.length} files)` };
         }
 

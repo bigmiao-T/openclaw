@@ -93,6 +93,13 @@ export function createCheckpointTool(params: {
             trigger: { type: "manual" },
           });
 
+          if (!meta) {
+            return {
+              content: [{ type: "text" as const, text: "Checkpoint skipped — no files changed." }],
+              details: { action, skipped: true },
+            };
+          }
+
           return {
             content: [{ type: "text" as const, text: `Checkpoint created: ${meta.id} (${meta.snapshot.filesChanged.length} files, ${meta.snapshot.changeSummary ?? "no changes"})` }],
             details: { action, checkpointId: meta.id },

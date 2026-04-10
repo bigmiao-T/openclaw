@@ -61,7 +61,7 @@ export class CheckpointEngine {
     return !this.config.excludeTools.some((t) => t.toLowerCase() === normalized);
   }
 
-  async createCheckpoint(params: CreateCheckpointParams): Promise<CheckpointMeta> {
+  async createCheckpoint(params: CreateCheckpointParams): Promise<CheckpointMeta | null> {
     const {
       agentId, sessionId, runId, workspaceDir, trigger, sessionTranscriptPath,
     } = params;
@@ -84,6 +84,13 @@ export class CheckpointEngine {
       checkpointId,
       parentRef,
     });
+
+    // Skip checkpoints with no file changes (auto-triggered only; manual and session_start always kept)
+    if (snapshot.filesChanged.length === 0 && trigger.type === "after_tool_call") {
+      await this.backend.deleteSnapshot(snapshot.snapshotRef);
+      this.logger?.info(`Skipped checkpoint ${checkpointId} — no files changed`);
+      return null;
+    }
 
     const snapshotDir = this.backend.getSnapshotDir(snapshot.snapshotRef);
     const transcript = await captureTranscriptSnapshot(sessionTranscriptPath, snapshotDir);
