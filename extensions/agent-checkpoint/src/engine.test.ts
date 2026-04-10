@@ -76,7 +76,7 @@ describe("CheckpointEngine", () => {
         sessionId: "s1",
         runId: "r1",
         workspaceDir,
-        trigger: { type: "before_tool_call", toolName: "Write" },
+        trigger: { type: "after_tool_call", toolName: "Write" },
       });
 
       // ID format: {agent}-{session_prefix}-{seq:03d}-{trigger_abbr}-{ts}
@@ -244,7 +244,7 @@ describe("CheckpointEngine", () => {
       await writeFile("data.txt", "v1");
       const cp1 = await engine.createCheckpoint({
         agentId: "a1", sessionId: "s1", runId: "r1", workspaceDir,
-        trigger: { type: "before_tool_call", toolName: "write" },
+        trigger: { type: "after_tool_call", toolName: "write" },
         sessionTranscriptPath: transcriptPath,
       });
 
@@ -253,7 +253,7 @@ describe("CheckpointEngine", () => {
       await writeFile("data.txt", "v2");
       const cp2 = await engine.createCheckpoint({
         agentId: "a1", sessionId: "s1", runId: "r1", workspaceDir,
-        trigger: { type: "before_tool_call", toolName: "write" },
+        trigger: { type: "after_tool_call", toolName: "write" },
         sessionTranscriptPath: transcriptPath,
       });
 

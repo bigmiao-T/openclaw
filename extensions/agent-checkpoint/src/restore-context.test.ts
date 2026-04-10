@@ -9,7 +9,7 @@ function makeCheckpointMeta(overrides?: Partial<CheckpointMeta>): CheckpointMeta
     sessionId: "abc123",
     agentId: "main",
     runId: "run-1",
-    trigger: { type: "before_tool_call", toolName: "Bash" },
+    trigger: { type: "after_tool_call", toolName: "Bash" },
     snapshot: {
       backendType: "copy",
       snapshotRef: "copy:main-abc123-003-bash",
@@ -36,7 +36,7 @@ describe("buildContinuationContext", () => {
     expect(result.agentPrompt).toContain("### Continue");
   });
 
-  it("includes tool name and undo info for before_tool_call trigger", () => {
+  it("includes tool name and undo info for after_tool_call trigger", () => {
     const result = buildContinuationContext({
       checkpoint: makeCheckpointMeta(),
       scope: "all",
@@ -44,8 +44,8 @@ describe("buildContinuationContext", () => {
       transcriptRestored: true,
     });
 
-    expect(result.agentPrompt).toContain("### Undone Tool: `Bash`");
-    expect(result.agentPrompt).toContain("reversed");
+    expect(result.agentPrompt).toContain("### Restored to: after `Bash`");
+    expect(result.agentPrompt).toContain("subsequent tool calls have been undone");
     expect(result.summary).toContain("`Bash`");
   });
 

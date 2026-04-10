@@ -37,8 +37,8 @@ export function buildContinuationContext(params: {
     `Restored to checkpoint \`${cp.id}\` (${time})`,
     `Scope: ${scope} | Files: ${filesCount} restored`,
   ];
-  if (trigger.type === "before_tool_call" && trigger.toolName) {
-    summaryParts.push(`Checkpoint was saved before \`${trigger.toolName}\` — that tool's changes have been undone.`);
+  if (trigger.type === "after_tool_call" && trigger.toolName) {
+    summaryParts.push(`Checkpoint was saved after \`${trigger.toolName}\` — all subsequent changes have been undone.`);
   }
   if (diff) {
     summaryParts.push("", "**Changes undone:**", "```", diff.slice(0, 2000), "```");
@@ -63,11 +63,11 @@ export function buildContinuationContext(params: {
   }
 
   // Section 2: What was undone
-  if (trigger.type === "before_tool_call" && trigger.toolName) {
+  if (trigger.type === "after_tool_call" && trigger.toolName) {
     promptParts.push("");
-    promptParts.push(`### Undone Tool: \`${trigger.toolName}\``);
+    promptParts.push(`### Restored to: after \`${trigger.toolName}\``);
 
-    promptParts.push("This tool's effects have been reversed. The workspace is now in the state from before that tool ran.");
+    promptParts.push("The workspace is now in the state right after this tool executed. All subsequent tool calls have been undone.");
   }
 
   if (filesCount > 0) {

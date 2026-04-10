@@ -18,7 +18,7 @@ Long-running agent tasks (code generation, multi-step refactoring, data processi
 ```
 ┌─────────────────────────────────────────────────────┐
 │                   OpenClaw Plugin SDK                │
-│  hooks: before_tool_call, session_start               │
+│  hooks: after_tool_call, session_start               │
 │  tool: checkpoint (list / create / restore)          │
 │  command: /checkpoint (list / create / restore /     │
 │           timeline / timeline-stop)                  │
@@ -162,7 +162,7 @@ type CheckpointMeta = {
   agentId: string;
   runId: string;
   trigger: {
-    type: "before_tool_call" | "manual" | "session_start";
+    type: "after_tool_call" | "manual" | "session_start";
     toolName?: string;
     toolCallId?: string;
   };
@@ -229,7 +229,7 @@ API endpoints:
 | Event | Behavior |
 |-------|----------|
 | `session_start` | Create baseline checkpoint (if workspace cached) |
-| `before_tool_call` | Create checkpoint unless tool is in `excludeTools` list |
+| `after_tool_call` | Create checkpoint unless tool is in `excludeTools` list |
 | Manual `/checkpoint create` | Always creates checkpoint |
 
 Default excluded tools: `read`, `glob`, `grep`, `memory_search`, `memory_get` (read-only tools that don't modify workspace).

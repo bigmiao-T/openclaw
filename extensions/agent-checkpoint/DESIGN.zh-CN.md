@@ -18,7 +18,7 @@
 ```
 ┌─────────────────────────────────────────────────────┐
 │                   OpenClaw Plugin SDK                │
-│  hooks: before_tool_call, session_start               │
+│  hooks: after_tool_call, session_start               │
 │  tool: checkpoint (list / create / restore)          │
 │  command: /checkpoint (list / create / restore /     │
 │           timeline / timeline-stop)                  │
@@ -165,7 +165,7 @@ type CheckpointMeta = {
   agentId: string;
   runId: string;
   trigger: {
-    type: "before_tool_call" | "manual" | "session_start";
+    type: "after_tool_call" | "manual" | "session_start";
     toolName?: string;           // 触发检查点的工具名称
     toolCallId?: string;
   };
@@ -235,7 +235,7 @@ API 端点：
 | 事件 | 行为 |
 |------|------|
 | `session_start` | 创建基线检查点（前提：工作区已缓存） |
-| `before_tool_call` | 创建检查点，除非工具在 `excludeTools` 列表中 |
+| `after_tool_call` | 创建检查点，除非工具在 `excludeTools` 列表中 |
 | 手动 `/checkpoint create` | 始终创建检查点 |
 
 默认排除的工具：`read`、`glob`、`grep`、`memory_search`、`memory_get`（只读工具，不修改工作区）。

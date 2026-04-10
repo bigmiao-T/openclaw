@@ -355,50 +355,12 @@ async function readSessionTranscript(
  * fractional insertion point for checkpoints).
  */
 export function buildTimeline(transcriptEvents: TimelineEvent[], checkpoints: CheckpointMeta[]): TimelineEvent[] {
-  // Index tool_call events by toolName for checkpoint→tool_call matching.
-  // A before_tool_call checkpoint is created AFTER the JSONL records the
-  // assistant tool_call block, so the checkpoint's epochMs > tool_call's epochMs.
-  // To enforce the display order checkpoint → tool_call → tool_result, we snap
-  // the checkpoint's epochMs to the matching tool_call's epochMs so the
-  // eventTypeWeight tiebreaker activates.
-  const toolCallsByName = new Map<string, TimelineEvent[]>();
-  for (const ev of transcriptEvents) {
-    if (ev.type === "tool_call" && ev.toolName) {
-      let arr = toolCallsByName.get(ev.toolName);
-      if (!arr) {
-        arr = [];
-        toolCallsByName.set(ev.toolName, arr);
-      }
-      arr.push(ev);
-    }
-  }
-
-  // Track which tool_call events have been claimed by a checkpoint.
-  const claimedToolCalls = new Set<TimelineEvent>();
+  // after_tool_call checkpoints are created after tool execution, so they
+  // naturally have epochMs > tool_result's epochMs. No epoch snapping needed —
+  // the checkpoint appears after the tool_result in chronological order.
 
   const cpEvents: TimelineEvent[] = checkpoints.map((cp, i) => {
-    let epochMs = toEpochMs(cp.createdAt);
-
-    // For before_tool_call checkpoints, find the closest preceding tool_call
-    // with matching toolName and snap epochMs to it.
-    if (cp.trigger.type === "before_tool_call" && cp.trigger.toolName) {
-      const candidates = toolCallsByName.get(cp.trigger.toolName) ?? [];
-      let bestMatch: TimelineEvent | undefined;
-      let bestDist = Infinity;
-      for (const tc of candidates) {
-        if (claimedToolCalls.has(tc)) continue;
-        // Tool call should be just before or at checkpoint time (within 10s window)
-        const dist = epochMs - tc.epochMs;
-        if (dist >= 0 && dist < 10_000 && dist < bestDist) {
-          bestDist = dist;
-          bestMatch = tc;
-        }
-      }
-      if (bestMatch) {
-        epochMs = bestMatch.epochMs;
-        claimedToolCalls.add(bestMatch);
-      }
-    }
+    const epochMs = toEpochMs(cp.createdAt);
 
     return {
       type: "checkpoint" as const,
@@ -406,7 +368,7 @@ export function buildTimeline(transcriptEvents: TimelineEvent[], checkpoints: Ch
       epochMs,
       timestamp: cp.createdAt,
       content: cp.trigger.toolName
-        ? `Checkpoint before ${cp.trigger.toolName}`
+        ? `Checkpoint after ${cp.trigger.toolName}`
         : cp.trigger.type === "session_start"
           ? "Session start checkpoint"
           : "Manual checkpoint",
@@ -420,7 +382,7 @@ export function buildTimeline(transcriptEvents: TimelineEvent[], checkpoints: Ch
   all.sort((a, b) => {
     const cmp = a.epochMs - b.epochMs;
     if (cmp !== 0) return cmp;
-    // Same ms: enforce logical order (checkpoint → tool_call → tool_result)
+    // Same ms: enforce logical order (tool_call → tool_result → checkpoint)
     const wCmp = eventTypeWeight(a.type) - eventTypeWeight(b.type);
     if (wCmp !== 0) return wCmp;
     // Same type at same ms: preserve source order
@@ -435,9 +397,9 @@ function eventTypeWeight(type: TimelineEvent["type"]): number {
     case "session_start": return 0;
     case "user_message": return 1;
     case "assistant_reply": return 2;
-    case "checkpoint": return 3;
-    case "tool_call": return 4;
-    case "tool_result": return 5;
+    case "tool_call": return 3;
+    case "tool_result": return 4;
+    case "checkpoint": return 5;
     case "compaction": return 6;
   }
 }

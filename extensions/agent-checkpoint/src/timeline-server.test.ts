@@ -119,13 +119,12 @@ describe("TimelineServer", () => {
     expect(res.status).toBe(404);
   });
 
-  it("orders checkpoint before its matching tool_call even with different timestamps", async () => {
-    // Simulate real scenario: JSONL records tool_call at T1, checkpoint created at T2 > T1
+  it("orders checkpoint after tool_result for after_tool_call trigger", async () => {
     const agentId = "a1";
     const sessionId = "s1";
     const T1 = 1712500000000; // tool_call recorded in JSONL
-    const T2 = T1 + 50;      // checkpoint created 50ms later (after snapshot)
-    const T3 = T1 + 500;     // tool_result after execution
+    const T2 = T1 + 500;     // tool_result after execution
+    const T3 = T1 + 600;     // checkpoint created after tool execution
 
     // Create JSONL transcript with tool_call and tool_result
     const sessionsDir = path.join(os.homedir(), ".openclaw", "agents", agentId, "sessions");
@@ -143,37 +142,37 @@ describe("TimelineServer", () => {
       }),
       JSON.stringify({
         type: "message",
-        timestamp: new Date(T3).toISOString(),
-        message: { role: "toolResult", timestamp: T3, content: "File written.", toolName: "Write" },
+        timestamp: new Date(T2).toISOString(),
+        message: { role: "toolResult", timestamp: T2, content: "File written.", toolName: "Write" },
       }),
     ];
     await fs.writeFile(transcriptPath, lines.join("\n") + "\n");
 
-    // Create a checkpoint with before_tool_call trigger at T2 (after tool_call in JSONL)
+    // Create a checkpoint with after_tool_call trigger
     await fs.writeFile(path.join(workspaceDir, "test.txt"), "data");
     const cp = await engine.createCheckpoint({
       agentId,
       sessionId,
       runId: "r1",
       workspaceDir,
-      trigger: { type: "before_tool_call", toolName: "Write", toolCallId: "tc1" },
+      trigger: { type: "after_tool_call", toolName: "Write", toolCallId: "tc1" },
     });
 
-    // Backdate checkpoint to T2 so it's between tool_call(T1) and tool_result(T3)
+    // Backdate checkpoint to T3 so it's after tool_result(T2)
     const metaPath = path.join(tmpDir, "storage", "meta", agentId, sessionId, cp.id, "meta.json");
     const meta = JSON.parse(await fs.readFile(metaPath, "utf8"));
-    meta.createdAt = new Date(T2).toISOString();
+    meta.createdAt = new Date(T3).toISOString();
     await fs.writeFile(metaPath, JSON.stringify(meta, null, 2));
 
-    // Fetch timeline and verify order: assistant_reply → checkpoint → tool_call → tool_result
+    // Fetch timeline and verify order: assistant_reply → tool_call → tool_result → checkpoint
     const data = await fetchJSON(`/api/sessions/${agentId}/${sessionId}/timeline`);
     const types = data.events.map((e: { type: string }) => e.type);
 
     expect(types).toEqual([
       "assistant_reply",
-      "checkpoint",
       "tool_call",
       "tool_result",
+      "checkpoint",
     ]);
 
     // Cleanup

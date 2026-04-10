@@ -110,7 +110,7 @@ export class CheckpointEngine {
     await this.store.saveCheckpoint(meta);
     this.lastRefBySession.set(sessionKey, snapshot.snapshotRef);
 
-    const toolDesc = trigger.toolName ? ` before ${trigger.toolName}` : "";
+    const toolDesc = trigger.toolName ? ` after ${trigger.toolName}` : "";
     this.logger?.info(
       `Checkpoint ${checkpointId} created${toolDesc} (${snapshot.filesChanged.length} files changed)`,
     );
@@ -382,7 +382,7 @@ function triggerToAbbr(trigger: CheckpointTrigger): string {
       return "start";
     case "manual":
       return "manual";
-    case "before_tool_call":
+    case "after_tool_call":
       return trigger.toolName
         ? trigger.toolName.slice(0, 16).toLowerCase().replace(/[^a-z0-9]/g, "-")
         : "tool";
