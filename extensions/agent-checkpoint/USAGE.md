@@ -5,7 +5,7 @@
 Once installed and enabled, the plugin works automatically:
 
 - **Session start** — creates a baseline checkpoint
-- **After each tool call** — creates a checkpoint (read-only tools like read/glob/grep are skipped)
+- **Before each tool call** — creates a checkpoint preserving the pre-tool state (read-only tools like read/glob/grep are skipped)
 
 No manual action needed. Checkpoints are created silently in the background.
 
