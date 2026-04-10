@@ -1,6 +1,6 @@
 export type CheckpointId = string;
 
-export type TriggerMode = "all_tools" | "mutating_tools" | "manual";
+export type TriggerMode = "auto" | "manual";
 export type RestoreScope = "files" | "transcript" | "all";
 
 export type CheckpointTrigger = {

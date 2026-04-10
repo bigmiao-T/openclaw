@@ -25,8 +25,8 @@
       },
       "triggerOn": {
         "type": "string",
-        "enum": ["all_tools", "mutating_tools", "manual"],
-        "default": "mutating_tools"
+        "enum": ["auto", "manual"],
+        "default": "auto"
       },
       "excludeTools": {
         "type": "array",
@@ -67,7 +67,7 @@
     },
     "triggerOn": {
       "label": "Trigger Mode",
-      "help": "When to create checkpoints: all_tools, mutating_tools (skip reads), or manual only."
+      "help": "When to create checkpoints: auto (all tools except excludeTools) or manual only."
     },
     "maxCheckpointsPerSession": {
       "label": "Max Per Session",

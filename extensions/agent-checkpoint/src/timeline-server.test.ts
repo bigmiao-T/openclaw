@@ -27,7 +27,7 @@ describe("TimelineServer", () => {
       storagePath,
       backendType: "copy",
       backendConfig: {},
-      triggerOn: "all_tools",
+      triggerOn: "auto",
       excludeTools: [],
       maxCheckpointsPerSession: 50,
       retentionDays: 7,

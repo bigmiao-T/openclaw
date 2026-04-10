@@ -18,7 +18,7 @@ describe("CheckpointEngine", () => {
     storagePath: "", // set in beforeEach
     backendType: "copy",
     backendConfig: {},
-    triggerOn: "all_tools",
+    triggerOn: "auto",
     excludeTools: ["Read", "Glob"],
     maxCheckpointsPerSession: 50,
     retentionDays: 7,

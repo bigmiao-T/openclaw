@@ -245,7 +245,7 @@ Default excluded tools: `read`, `glob`, `grep`, `memory_search`, `memory_get` (r
   "backendConfig": {
     "excludePatterns": [".git", "node_modules", ".DS_Store"]
   },
-  "triggerOn": "mutating_tools",     // "all_tools" | "mutating_tools" | "manual"
+  "triggerOn": "auto",               // "auto" | "manual"
   "excludeTools": ["read", "glob", "grep"],
   "maxCheckpointsPerSession": 200,
   "retentionDays": 30,

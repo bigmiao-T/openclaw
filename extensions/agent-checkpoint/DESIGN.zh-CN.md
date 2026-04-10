@@ -251,7 +251,7 @@ API 端点：
   "backendConfig": {                            // 透传给后端的参数
     "excludePatterns": [".git", "node_modules", ".DS_Store"]
   },
-  "triggerOn": "mutating_tools",                // "all_tools" | "mutating_tools" | "manual"
+  "triggerOn": "auto",                           // "auto" | "manual"
   "excludeTools": ["read", "glob", "grep"],     // 不触发检查点的工具
   "maxCheckpointsPerSession": 200,              // 每会话最大检查点数
   "retentionDays": 30,                          // 保留天数

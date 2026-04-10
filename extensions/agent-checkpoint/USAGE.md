@@ -129,7 +129,7 @@ All fields are optional. Invalid values fall back to safe defaults.
   "backendConfig": {                        // backend-specific params
     "excludePatterns": [".git", "node_modules", ".DS_Store"]
   },
-  "triggerOn": "mutating_tools",            // "all_tools" | "mutating_tools" | "manual"
+  "triggerOn": "auto",                      // "auto" | "manual"
   "excludeTools": ["read", "glob", "grep"], // tools that don't trigger checkpoints
   "maxCheckpointsPerSession": 200,          // max checkpoints per session (1-1000)
   "retentionDays": 30,                      // auto-prune after N days (1-365)

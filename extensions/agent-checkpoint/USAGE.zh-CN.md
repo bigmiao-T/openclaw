@@ -129,7 +129,7 @@ Agent: 看看有哪些检查点可以回滚
   "backendConfig": {                        // 后端私有参数
     "excludePatterns": [".git", "node_modules", ".DS_Store"]
   },
-  "triggerOn": "mutating_tools",            // "all_tools" | "mutating_tools" | "manual"
+  "triggerOn": "auto",                      // "auto" | "manual"
   "excludeTools": ["read", "glob", "grep"], // 不触发检查点的工具
   "maxCheckpointsPerSession": 200,          // 每会话最大检查点数（1-1000）
   "retentionDays": 30,                      // 自动清理天数（1-365）

@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import type { CheckpointPluginConfig, TriggerMode, RestoreScope } from "./types.js";
 
-const TRIGGER_MODES: TriggerMode[] = ["all_tools", "mutating_tools", "manual"];
+const TRIGGER_MODES: TriggerMode[] = ["auto", "manual"];
 const RESTORE_SCOPES: RestoreScope[] = ["files", "transcript", "all"];
 const DEFAULT_EXCLUDE_TOOLS = ["read", "glob", "grep", "memory_search", "memory_get"];
 
@@ -11,7 +11,7 @@ export const DEFAULT_CONFIG: CheckpointPluginConfig = {
   storagePath: path.join(os.homedir(), ".openclaw", "checkpoints"),
   backendType: "copy",
   backendConfig: {},
-  triggerOn: "mutating_tools",
+  triggerOn: "auto",
   excludeTools: DEFAULT_EXCLUDE_TOOLS,
   maxCheckpointsPerSession: 200,
   retentionDays: 30,
